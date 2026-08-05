@@ -24,6 +24,7 @@ Fonte de verdade para retomar o trabalho. Atualizado ao fim de cada loop.
 ## L0 — Bootstrap (2026-08-05)
 
 **Local:** `C:\Users\ALPHA MODE\Documents\Projetos\TheAlphaOffshoreCode\aegis-pt`
+**Remoto:** https://github.com/TheAlphaOffshoreCode/aegis-pt (público, CI verde)
 
 ### Arquivos tocados
 
@@ -65,8 +66,8 @@ Fonte de verdade para retomar o trabalho. Atualizado ao fim de cada loop.
 | P4 | Dependências de auth (JWT, Argon2/bcrypt) entram no `requirements.txt` | L2 |
 | P5 | Dependências de IA (SDK Anthropic, índice vetorial) entram no `requirements.txt` | L9 |
 | P6 | `starlette.testclient` avisa que `httpx` está depreciado em favor de `httpx2` — sem efeito hoje | reavaliar em L13 |
-| P7 | Repositório git local sem remote; publicação no GitHub não foi solicitada | quando o autor decidir |
-| P8 | Skill `security-review` exige diff contra `origin/HEAD`; sem commit inicial não roda | destrava no 1º commit |
+| ~~P7~~ | ~~Repositório sem remote~~ — publicado em TheAlphaOffshoreCode/aegis-pt, CI verde | resolvido em 05/08/2026 |
+| ~~P8~~ | ~~`security-review` sem linha de base~~ — destravada pelo commit inicial | resolvido em 05/08/2026 |
 | P9 | Skill `impeccable` aplicada às telas reais; o shell atual é diagnóstico | L11/L12 |
 
 ### Ponto exato de retomada
