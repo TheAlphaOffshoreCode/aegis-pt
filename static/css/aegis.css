@@ -1,0 +1,113 @@
+/* AEGIS PT — identidade visual. Todo token de cor e tipografia nasce aqui. */
+
+:root {
+  --void: #0b0f14;
+  --void-alto: #121821;
+  --regua: #1e2937;
+  --cyan: #38bdf8;
+  --amber: #f59e0b;
+  --texto: #e2e8f0;
+  --texto-fraco: #7d8b9c;
+
+  /* Oswald e JetBrains Mono entram como arquivos locais (woff2); até lá, os fallbacks valem. */
+  --fonte-titulo: "Oswald", "Bahnschrift", "Arial Narrow", sans-serif;
+  --fonte-dado: "JetBrains Mono", "Cascadia Mono", "Consolas", monospace;
+  --fonte-corpo: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--void);
+  color: var(--texto);
+  font-family: var(--fonte-corpo);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--regua);
+}
+
+h1 {
+  margin: 0;
+  font-family: var(--fonte-titulo);
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+header span {
+  font-family: var(--fonte-dado);
+  font-size: 11px;
+  color: var(--texto-fraco);
+}
+
+main {
+  padding: 20px;
+}
+
+.painel {
+  max-width: 560px;
+  border: 1px solid var(--regua);
+  background: var(--void-alto);
+}
+
+.painel h2 {
+  margin: 0;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--regua);
+  font-family: var(--fonte-titulo);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--texto-fraco);
+}
+
+.linha {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--regua);
+  font-family: var(--fonte-dado);
+  font-size: 12px;
+}
+
+.linha:last-child {
+  border-bottom: 0;
+}
+
+.linha dt {
+  color: var(--texto-fraco);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.linha dd {
+  margin: 0;
+  color: var(--cyan);
+}
+
+.chip {
+  padding: 1px 7px;
+  border: 1px solid currentColor;
+  font-family: var(--fonte-dado);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.chip.falha {
+  color: var(--amber);
+}
