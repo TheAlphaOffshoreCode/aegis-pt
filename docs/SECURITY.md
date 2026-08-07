@@ -143,6 +143,32 @@ Corrections never rewrite. `POST /pts/{id}/trilha/{evento_id}/compensacao` appen
 referencing the original, restricted to `coordenador` and `oim`. The wrong record stays
 visible.
 
+## Uploads (L7)
+
+An uploaded file is hostile input that later gets served back. Four separate defences:
+
+- **The path is never the client's.** Files land at `{upload_dir}/{pt.uuid}/{uuid4}{ext}`, and
+  any directory component in the submitted name is stripped before it is even stored as a
+  label. `caminho_absoluto()` still re-checks that the resolved path sits under the upload
+  directory — cheap, and the difference between a bug and a leak the day that column can be
+  influenced.
+- **Extensions are an allowlist**, not a denylist. `.html` and `.svg` are excluded on purpose:
+  both render as pages.
+- **Serving is always `attachment` plus `nosniff`**, with the media type taken from the
+  server's own map rather than the `Content-Type` the client declared. The
+  `Content-Disposition` header is produced by Starlette, not concatenated by hand — the
+  filename came from the client, and hand-built headers are how quotes and newlines get in.
+- **`upload_dir` must never point inside `static/`**, which is served directly and would turn
+  every upload into public content.
+
+The SHA-256 is computed over the received bytes and is what proves the file did not change
+after being attached. Size is capped during the read, and a partial file is deleted rather
+than left orphaned.
+
+Attachments do not enter the permit's document hash: the hash covers the form that people
+sign. Attaching and removing are recorded in the trail with actor, timestamp, context and the
+file's own hash — and removal is only possible while the permit is still a draft.
+
 ## Data integrity
 
 - Foreign keys are enforced on SQLite (`PRAGMA foreign_keys=ON` on every connection).

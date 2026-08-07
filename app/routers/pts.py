@@ -1,20 +1,23 @@
 """Endpoints da PT. Só parse, autorização e delegação — a regra vive em `app/rules`."""
 
-from datetime import datetime
+from datetime import date, datetime
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit.trilha import Contexto
 from app.database import get_db
 from app.models.auditoria import AuditEvent
-from app.models.enums import EstadoPT, PerfilUsuario, TipoTrabalho
-from app.models.permissao import ModeloPT, PermissaoTrabalho
+from app.models.enums import EstadoPT, PerfilUsuario, TipoAnexo, TipoTrabalho
+from app.models.permissao import Anexo, ModeloPT, PermissaoTrabalho
 from app.models.pessoa import Usuario
 from app.rules.pendencias import bloqueiam
 from app.schemas.auditoria import AuditEventRead, CompensacaoRequest, TrilhaRead
 from app.schemas.permissao import (
+    AnexoRead,
     AvaliacaoRead,
     ModeloPTRead,
     PermissaoTrabalhoCreate,
@@ -24,7 +27,7 @@ from app.schemas.permissao import (
     TransicaoRequest,
 )
 from app.security.dependencias import exigir_perfis, usuario_atual
-from app.services import auditoria, permissoes
+from app.services import anexos, auditoria, permissoes
 from app.services.transicoes import executar_transicao, transicoes_disponiveis
 
 router = APIRouter(prefix="/pts", tags=["permissões de trabalho"])
@@ -191,6 +194,86 @@ def compensar_evento(
         dados.motivo,
         _contexto(request, dados.geolocalizacao),
     )
+
+
+@router.post(
+    "/{pt_id}/anexos", response_model=AnexoRead, status_code=status.HTTP_201_CREATED
+)
+def anexar(
+    pt_id: int,
+    request: Request,
+    arquivo: UploadFile,
+    tipo: TipoAnexo = Form(...),
+    valido_ate: date | None = Form(default=None),
+    db: Session = Depends(get_db),
+    autor: Usuario = Depends(usuario_atual),
+) -> Anexo:
+    """Envia um documento para a PT. O hash é calculado aqui, sobre o conteúdo recebido."""
+    return anexos.anexar(
+        db,
+        _pt_no_escopo(db, pt_id, autor),
+        arquivo,
+        tipo,
+        autor,
+        valido_ate,
+        _contexto(request, None),
+    )
+
+
+@router.get("/{pt_id}/anexos", response_model=list[AnexoRead])
+def listar_anexos(
+    pt_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(usuario_atual),
+) -> list[Anexo]:
+    """Documentos da PT. O conteúdo vem por outra rota; aqui só os metadados."""
+    return list(_pt_no_escopo(db, pt_id, usuario).anexos)
+
+
+@router.get("/{pt_id}/anexos/{anexo_id}/conteudo")
+def baixar_anexo(
+    pt_id: int,
+    anexo_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(usuario_atual),
+) -> FileResponse:
+    """Entrega o arquivo — sempre como download, nunca renderizado no navegador."""
+    pt = _pt_no_escopo(db, pt_id, usuario)
+    anexo = next((a for a in pt.anexos if a.id == anexo_id), None)
+    if anexo is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Anexo não encontrado nesta PT"
+        )
+
+    return FileResponse(
+        anexos.caminho_absoluto(anexo),
+        # Tipo do nosso mapa, não o que o cliente declarou no upload.
+        media_type=anexos.EXTENSOES_PERMITIDAS[Path(anexo.caminho).suffix.lower()],
+        # O `Content-Disposition` sai daqui, e não de um header montado à mão: o nome veio do
+        # cliente, e concatená-lo num header seria deixar aspas e quebra de linha entrarem.
+        # O Starlette já responde `attachment` e faz o encoding do nome.
+        filename=anexo.nome_arquivo,
+        # Anexo é conteúdo de terceiro: o navegador não pode adivinhar o tipo e executá-lo.
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
+
+
+@router.delete("/{pt_id}/anexos/{anexo_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remover_anexo(
+    pt_id: int,
+    anexo_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    autor: Usuario = Depends(usuario_atual),
+) -> None:
+    """Remove um anexo do rascunho. Depois que a PT circulou, o anexo é registro."""
+    pt = _pt_no_escopo(db, pt_id, autor)
+    anexo = next((a for a in pt.anexos if a.id == anexo_id), None)
+    if anexo is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Anexo não encontrado nesta PT"
+        )
+    anexos.remover(db, pt, anexo, autor, _contexto(request, None))
 
 
 def _contexto(request: Request, geolocalizacao: str | None) -> Contexto:

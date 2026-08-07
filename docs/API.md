@@ -168,6 +168,29 @@ stays visible — a trail that disappears when it is inconvenient is not a trail
 
 A compensation cannot be compensated: register a new event instead.
 
+### `POST /pts/{id}/anexos` · `GET /pts/{id}/anexos` · `DELETE /pts/{id}/anexos/{anexo_id}`
+
+Upload is `multipart/form-data`: `arquivo`, `tipo` and optional `valido_ate`.
+
+The SHA-256 is computed **here**, over the bytes received — never accepted from the client. The
+filename sent is kept as a label only; the path on disk is `{upload_dir}/{pt.uuid}/{uuid4}{ext}`,
+and any directory component in the submitted name is stripped.
+
+Extensions are an allowlist — `.pdf`, `.jpg`, `.jpeg`, `.png`. `.html` and `.svg` are excluded
+deliberately: the browser would render them as a page. Size is capped by
+`AEGIS_ANEXO_TAMANHO_MAXIMO_MB` (default 10), enforced during the read, and a partial file is
+deleted rather than left behind.
+
+Attaching is allowed in any state except `ARQUIVADA` — the APR arrives during analysis, the
+report at closing. **Removing works only in `RASCUNHO`, and only for the requester:** once the
+permit has circulated, the attachment is part of what people analysed.
+
+### `GET /pts/{id}/anexos/{anexo_id}/conteudo`
+
+Returns the file with the media type from the server's own map, `Content-Disposition:
+attachment` and `X-Content-Type-Options: nosniff`. An attachment is third-party content and must
+never be interpreted as a page inside the application's origin.
+
 ## Business conflicts
 
 Every blocking pendency returns `409` with the structured list, produced by a single handler
@@ -192,6 +215,9 @@ Risk (L4): `janela_vencida`, `janela_excede_o_maximo`, `janela_menor_que_a_durac
 Flow (L5): `transicao_invalida`, `motivo_obrigatorio`.
 
 Trail (L6): `evento_inexistente`, `compensacao_de_compensacao`.
+
+Attachments (L7): `extensao_nao_permitida`, `arquivo_vazio`, `arquivo_muito_grande`,
+`pt_arquivada`, `anexo_nao_removivel`, `anexo_fora_da_area`.
 
 `422` remains what it always was: the payload did not even parse. `409` means it parsed and
 the business refused it.

@@ -7,7 +7,7 @@ escolher em que estado a permissão está.
 
 from datetime import date, datetime
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from app.models.enums import EstadoPT, PapelAssinatura, TipoAnexo, TipoTrabalho
 from app.schemas.base import ORMDatado, ORMSchema
@@ -104,22 +104,6 @@ class PTVersaoRead(ORMSchema):
     autor_id: int
     motivo: str
     criado_em: datetime
-
-
-class AnexoCreate(BaseModel):
-    """Metadados do anexo. O hash é calculado pelo servidor sobre o arquivo recebido."""
-
-    tipo: TipoAnexo
-    nome_arquivo: str = Field(min_length=1, max_length=255)
-    valido_ate: date | None = None
-
-    @field_validator("nome_arquivo")
-    @classmethod
-    def _nome_sem_caminho(cls, valor: str) -> str:
-        """O L7 grava em disco: separador ou `..` no nome é path traversal esperando acontecer."""
-        if "/" in valor or "\\" in valor or ".." in valor:
-            raise ValueError("nome_arquivo não pode conter caminho")
-        return valor
 
 
 class AnexoRead(ORMSchema):

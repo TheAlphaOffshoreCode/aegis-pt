@@ -12,8 +12,8 @@ audit trail that survives an incident investigation.
 
 [![CI](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml/badge.svg)](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Status: L6 of L13](https://img.shields.io/badge/status-L6_of_L13-f59e0b.svg)](#roadmap)
-[![Tests: 104](https://img.shields.io/badge/tests-104_passing-22c55e.svg)](#tests)
+[![Status: L7 of L13](https://img.shields.io/badge/status-L7_of_L13-f59e0b.svg)](#roadmap)
+[![Tests: 118](https://img.shields.io/badge/tests-118_passing-22c55e.svg)](#tests)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Offline capable](https://img.shields.io/badge/PWA-offline_planned-0ea5e9.svg)](#offshore-constraints)
 
@@ -23,10 +23,10 @@ audit trail that survives an incident investigation.
 
 ## Current state — read this before cloning
 
-**L0 through L6 are done, and the permit cycle actually closes.** A permit is opened from a
-form defined per work type, walks the approval chain collecting a signature at each step, gets
-checked by a deterministic rule engine before release, and leaves a hash-chained trail that
-detects tampering.
+**L0 through L7 are done, and the permit cycle actually closes.** A permit is opened from a
+form defined per work type, collects its documents, walks the approval chain gathering a
+signature at each step, gets checked by a deterministic rule engine before release, and leaves
+a hash-chained trail that detects tampering.
 
 The clearest way to say what works is to show it refusing to work. This is a real run against
 the development database:
@@ -44,10 +44,11 @@ Four signatures collected, five roles involved, and the release refused because 
 NR-35 expires before the permit's own window closes — decided by tested code, not by anyone
 remembering to look.
 
-**What is still missing:** attachments and OCR (L7), search and dossier export (L8), the whole
-AI assistant (L9–L10), indicators and alerts (L11), the offline PWA (L12) and the closing
-security audit (L13). The interface is still a diagnostic shell — this is a working API, not a
-finished product.
+**What is still missing:** search and dossier export (L8), OCR ingestion of the paper archive
+(deferred from L7 — it needs a bulk import flow that does not exist yet), the whole AI
+assistant (L9–L10), indicators and alerts (L11), the offline PWA (L12) and the closing security
+audit (L13). The interface is still a diagnostic shell — this is a working API, not a finished
+product.
 
 ## The problem
 
@@ -161,8 +162,8 @@ way to create accounts with a known password.
 python -m pytest -q
 ```
 
-A hundred and four tests. The ones worth naming are those that fail loudly the day a guarantee
-quietly stops holding:
+A hundred and eighteen tests. The ones worth naming are those that fail loudly the day a
+guarantee quietly stops holding:
 
 - the audit chain **detects tampering** — a row edited through raw SQL, bypassing the
   application entirely, is caught, and the ORM refuses the same edit outright;
@@ -172,15 +173,17 @@ quietly stops holding:
   token expires;
 - an event sealed under an older payload format still verifies — adding a field must not
   invalidate the trail written yesterday;
+- an upload named `../../etc/passwd.pdf` is stored as `passwd.pdf`, an `.html` upload is
+  refused outright, and every download comes back as `attachment` with `nosniff`;
 - a permit outside your scope answers `404`, and the server ignores `estado`, `numero` and
   `requisitante_id` when a client sends them;
 - SQLite foreign keys are actually enforced, and the migration is compared against the models
   and then rolled all the way back.
 
-Forty of them touch no database at all — the rule engine, the state machine and the form
-validator are pure functions, and those forty run in **0.07 s** against roughly thirty seconds
-for the full suite. That gap is the point: a safety rule that is expensive to test ends up
-under-tested.
+Thirty-seven of them touch no database at all — the rule engine, the state machine and the form
+validator are pure functions, and those thirty-seven run in **0.08 s** against roughly thirty
+seconds for the full suite. That gap is the point: a safety rule that is expensive to test ends
+up under-tested.
 
 They need no `.env` — the fixtures set the environment before importing the application, which is
 also how CI runs them, on 3.11 and 3.14.
@@ -200,14 +203,16 @@ also how CI runs them, on 3.11 and 3.14.
 | `GET` · `POST` | `/pts/{id}/transicoes` | Available steps, and moving through them |
 | `GET` | `/pts/{id}/trilha` | The audit trail, already verified link by link |
 | `POST` | `/pts/{id}/trilha/{evento_id}/compensacao` | Corrects a record without rewriting it |
+| `POST` · `GET` · `DELETE` | `/pts/{id}/anexos` | Documents, hashed server-side on upload |
+| `GET` | `/pts/{id}/anexos/{id}/conteudo` | Download, always `attachment` + `nosniff` |
 | `GET` | `/` · `/static/{path}` | PWA shell and vendored assets |
 
 A blocking pendency returns `409` with a structured list — `codigo`, `severidade`, `mensagem`,
 `campo`, `responsavel` — never a bare sentence, because the screen needs to know which field to
 mark and who is expected to resolve it. `422` still means the payload did not parse at all.
 
-Still scheduled: attachments at L7, search and dossier export at L8, the AI endpoints at L9 and
-L10, indicators and alerts at L11.
+Still scheduled: search and dossier export at L8, the AI endpoints at L9 and L10, indicators and
+alerts at L11.
 
 ## Roadmap
 
@@ -235,8 +240,14 @@ the transition simply does not exist in the graph.
 compensating events. The payload format is versioned, so adding a field never invalidates a
 trail already sealed.
 
-**L7–L8 — the archive.** Attachments with expiry and hashing, OCR ingestion of legacy scans,
-combined structured search, dossier export.
+**L7 — done.** Attachments: SHA-256 computed server-side, extension allowlist, size cap enforced
+mid-read, downloads served as `attachment` with `nosniff`, and removal only while the permit is
+still a draft. **OCR was deliberately deferred** — it needs Tesseract as a system dependency and
+a bulk-import flow for the paper archive that does not exist yet. Building it now would be
+building the part nobody calls.
+
+**L8 — the archive.** Combined structured search, dossier export, permit history with diffs,
+and the OCR ingestion carried over from L7.
 
 **L9–L10 — the assistant.** Natural-language search over read-only tools scoped to the
 authenticated user, and draft generation that explicitly flags every field still requiring a human

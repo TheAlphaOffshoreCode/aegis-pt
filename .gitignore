@@ -5,3 +5,5 @@ __pycache__/
 *.db
 .pytest_cache/
 uploads/
+test_uploads/
+graphify-out/

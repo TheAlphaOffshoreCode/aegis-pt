@@ -11,8 +11,8 @@ Fonte de verdade para retomar o trabalho. Atualizado ao fim de cada loop.
 | L4 | Motor de regras determinístico | ✅ concluído | 2026-08-07 |
 | L5 | Máquina de estados e fluxo de aprovação | ✅ concluído | 2026-08-07 |
 | L6 | Trilha de auditoria imutável | ✅ concluído | 2026-08-07 |
-| L7 | Anexos, validade e OCR | ⏳ aguardando autorização | — |
-| L8 | Busca estruturada e dossiê | — | — |
+| L7 | Anexos e validade (OCR adiado) | ✅ concluído | 2026-08-07 |
+| L8 | Busca estruturada e dossiê | ⏳ aguardando autorização | — |
 | L9 | IA: busca em linguagem natural | — | — |
 | L10 | IA: geração de rascunho | — | — |
 | L11 | Indicadores e alertas | — | — |
@@ -335,6 +335,58 @@ nenhum" — isso não podia ficar documentado como limitação. Cada evento pass
 `versao_payload` com que nasceu, e o formato virou contrato: acrescentar campo exige subir a
 versão e manter o formato anterior montável. Coberto por dois testes.
 
+---
+
+## L7 — Anexos e validade (2026-08-07)
+
+**Entregue:** upload com hash calculado no servidor, validade, download seguro, remoção
+restrita e registro na trilha. **O OCR foi adiado de propósito** — ver abaixo.
+**Aceite:** 118 testes passando. No banco de desenvolvimento, anexar APR e ASO **apagou a
+pendência `documento_ausente`** que existia desde o L4, sobrando apenas a certificação vencida.
+
+### Arquivos tocados
+
+| Arquivo | Papel |
+|---|---|
+| `app/services/anexos.py` | gravação, hash, allowlist, limite de tamanho, remoção |
+| `app/routers/pts.py` | upload, listagem, download e remoção |
+| `app/config.py` | `upload_dir` e `anexo_tamanho_maximo_mb` |
+| `tests/conftest.py` | uploads dos testes isolados e limpos por teste |
+| `tests/test_anexos.py` | 15 testes |
+| `requirements.txt` | `python-multipart` |
+
+### Por que o OCR não entrou
+
+Não foi falta de tempo. O OCR exige um binário de sistema (Tesseract) no runner e no servidor,
+e o valor dele — ingerir o acervo de PTs em papel — depende de um **fluxo de importação em
+lote que não existe**: não há modelo, tela nem endpoint para "acervo legado". Implementá-lo
+agora seria construir a peça que ninguém chama, e ainda pagar a dependência de sistema no CI.
+
+Entra no L8, junto com a busca e o dossiê, que é onde o acervo importado passa a ter para onde
+ir. Registrado como P28.
+
+### Decisões
+
+- **Extensão por allowlist**, com `.html` e `.svg` fora de propósito: o navegador os renderiza
+  como página, e anexo é conteúdo de terceiro.
+- **Anexar vale em qualquer estado menos `ARQUIVADA`** — a APR chega na análise, o relatório no
+  encerramento. **Remover, só em `RASCUNHO` e só pelo requisitante:** depois que a PT circulou,
+  o anexo faz parte do que as pessoas analisaram.
+- **Anexos não entram no hash do documento.** O hash cobre o formulário que é assinado; o
+  anexo tem o seu próprio, e as duas coisas vão para a trilha.
+- **`AnexoCreate` foi apagado.** O upload usa `Form`/`UploadFile`, então o schema virou código
+  morto — mas a garantia que ele carregava (nada de caminho no nome) mudou para o serviço, com
+  teste junto.
+
+### Segurança
+
+- Caminho gerado por nós (`{upload_dir}/{pt.uuid}/{uuid4}{ext}`); qualquer diretório no nome
+  enviado é descartado. `caminho_absoluto()` reconfere que o arquivo está sob `upload_dir`.
+- Download sempre `attachment` + `nosniff`, com o tipo saindo do nosso mapa e não do que o
+  cliente declarou. O `Content-Disposition` é gerado pelo Starlette — header montado à mão com
+  nome vindo do cliente é injeção esperando acontecer.
+- Limite de tamanho conferido **durante** a leitura, e arquivo parcial é apagado.
+
 ### Pendências abertas
 
 | # | Pendência | Loop de destino |
@@ -349,7 +401,7 @@ versão e manter o formato anterior montável. Coberto por dois testes.
 | ~~P8~~ | ~~`security-review` sem linha de base~~ — destravada pelo commit inicial | resolvido em 05/08/2026 |
 | P9 | Skill `impeccable` aplicada às telas reais; o shell atual é diagnóstico | L11/L12 |
 | ~~P10~~ | ~~Coluna `respostas` especulativa~~ — virou o campo onde o formulário dinâmico grava | resolvido no L3 |
-| P11 | `AuditEventRead`, `AlertaRead` e `AnexoCreate` existem sem consumidor até os loops que os usam | L6/L7/L11 |
+| P11 | `AlertaRead` ainda sem consumidor. `AuditEventRead` passou a ser usado no L6; `AnexoCreate` foi apagado no L7 | L11 |
 | ~~P12~~ | ~~`usuario` sem credencial~~ — `senha_hash`, `ultimo_acesso` e `unidade_id` criados | resolvido no L2 |
 | P13 | Compatibilidade com Python 3.11 só é provada no CI — esta máquina tem apenas 3.14 | contínuo |
 | P14 | Login sem limite de tentativas e sem bloqueio de conta; sem lista de revogação de token — token vazado vale até vencer | L13 |
@@ -363,7 +415,10 @@ versão e manter o formato anterior montável. Coberto por dois testes.
 | P23 | Retomada de PT suspensa não gera assinatura, só evento de trilha. Se a operação exigir assinatura formal, é índice parcial ou tabela de eventos assinados | quando pedirem |
 | ~~P24~~ | ~~Sem verificador, API de trilha e compensação~~ — os três entregues | resolvido no L6 |
 | P25 | `PTVersao` é gravada mas não exposta: falta endpoint de histórico e diff | L8 |
-| P20 | `documentos_obrigatorios` sempre acusa ausência enquanto o upload não existe. Correto, mas só deixa de ser ruído com o L7 | L7 |
+| ~~P20~~ | ~~`documento_ausente` sempre acusando~~ — upload entregue; a pendência some quando o papel chega | resolvido no L7 |
+| P28 | **OCR do acervo legado.** Adiado por decisão: exige Tesseract como dependência de sistema e depende de um fluxo de importação em lote que ainda não existe | L8 |
+| P29 | Anexo removido some do disco depois do commit. Se o `unlink` falhar, sobra arquivo órfão — inverter a ordem deixaria linha apontando para nada, que é pior | L13 |
+| P30 | Só a extensão é validada, não o conteúdo real do arquivo. Conferir *magic bytes* barra um `.exe` renomeado para `.pdf` | L13 |
 | P21 | Duração máxima e pares incompatíveis são constantes em `exigencias.py`. Se a operação quiser ajustar sem deploy, viram configuração | quando pedirem |
 | P22 | API aceita datetime sem fuso e o trata como UTC. Exigir offset explícito é decisão do contrato HTTP | L12/L13 |
 
@@ -373,24 +428,20 @@ L1 fechado e verificado: 20 testes passando, `alembic upgrade head` e `downgrade
 o seed roda duas vezes sem duplicar, `/health` continua 200. O clone do PC A precisou de `.venv`
 e `.env` próprios — nenhum dos dois vem do repositório.
 
-L6 fechado e verificado: 104 testes passando; no banco de desenvolvimento a cadeia da
-`PT-2026-0002` fecha, denuncia a adulteração feita por SQL direto e volta a fechar quando o
-valor original é restaurado. O ORM recusa qualquer `UPDATE` ou `DELETE` na trilha.
+L7 fechado e verificado: 118 testes passando; no banco de desenvolvimento, anexar APR e ASO
+apagou a pendência `documento_ausente` que existia desde o L4, e um nome enviado como
+`../../ASO Rafael.pdf` foi guardado apenas como `ASO Rafael.pdf`.
 
-Próximo passo: **L7 — Anexos, validade e OCR**. O terreno:
+Próximo passo: **L8 — Busca estruturada e dossiê**, com o OCR (P28) entrando junto. O terreno:
 
-- A tabela `anexo` existe desde o L1 com `hash_sha256`, `valido_ate` e `enviado_por_id`, e o
-  motor de regras (L4) **já cobra** APR e ASO por tipo de trabalho — hoje toda PT acusa
-  `documento_ausente`, e é o L7 que faz isso deixar de ser ruído (P20).
-- `AnexoCreate` já recusa `/`, `\` e `..` no nome do arquivo. O upload precisa continuar não
-  confiando nesse nome para montar caminho em disco: gravar com nome gerado e guardar o
-  original só como rótulo.
-- `uploads/` já está no `.gitignore`.
-- O hash do arquivo é o que prova que ele não mudou depois de anexado — calcular no servidor,
-  sobre o conteúdo recebido, e nunca aceitar do cliente.
-- Anexar e remover anexo mudam o documento: precisam entrar na trilha e considerar que o hash
-  da PT muda junto.
-- OCR é a parte cara. Se não couber no loop, é pendência declarada, não meia implementação.
+- A listagem de `/pts` já filtra por estado, tipo e vigência, **sem paginação** (P17) — o L8 é
+  onde isso deixa de escalar e precisa ser resolvido.
+- `PTVersao` é gravada desde o L5 e **nunca foi exposta** (P25): o dossiê é o lugar natural do
+  histórico com diff.
+- O dossiê reúne o que já existe: PT, versões, assinaturas, anexos e trilha conferida. Nenhum
+  dado novo — a regra 5 continua valendo, e o escopo entra na consulta.
+- O OCR só faz sentido com um fluxo de importação de acervo: modelo para o documento legado,
+  ingestão em lote e indexação. Se for grande, é loop próprio, não apêndice do L8.
 
 Lembretes que já custaram caro: todo modelo novo entra em `app/models/__init__.py`, senão o
 autogenerate o ignora; toda coluna de enum passa por `enum_col()`; nenhuma constraint nasce sem

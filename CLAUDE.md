@@ -160,6 +160,12 @@ Deviations: `SUSPENSA` (only from `EM_EXECUCAO`) and `REJEITADA` (returns to `RA
   the payload on its own, any drift between the two would look like tampering.
 - **Anything written into an `audit_event` must be set at creation.** Assigning an attribute
   afterwards marks the object dirty and the append-only guard refuses the flush — correctly.
+- **Never build a `Content-Disposition` by hand.** Pass `filename=` to `FileResponse` and let
+  Starlette encode it; the name came from the client, and manual headers are how quotes and
+  newlines get injected.
+- **`AEGIS_UPLOAD_DIR` must stay outside `static/`.** That directory is served as-is, so an
+  upload landing there becomes public content.
+- **f-strings cannot reuse the outer quote character** — that is 3.12+, and CI runs 3.11.
 
 ## Conventions
 

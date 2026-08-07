@@ -5,8 +5,8 @@ from datetime import datetime, timedelta
 import pytest
 from pydantic import ValidationError
 
-from app.models.enums import TipoAnexo, TipoTrabalho
-from app.schemas import AnexoCreate, CertificacaoCreate, PermissaoTrabalhoCreate
+from app.models.enums import TipoTrabalho
+from app.schemas import CertificacaoCreate, PermissaoTrabalhoCreate
 
 AGORA = datetime(2026, 8, 7, 8, 0)
 
@@ -37,16 +37,6 @@ def test_pt_nao_aceita_estado_nem_numero_vindos_do_cliente() -> None:
 
     assert not hasattr(pt, "estado")
     assert not hasattr(pt, "numero")
-
-
-@pytest.mark.parametrize(
-    "nome", ["../../etc/passwd", "..\\..\\windows\\system32\\config\\sam", "sub/dir/apr.pdf"]
-)
-def test_anexo_recusa_caminho_no_nome_do_arquivo(nome: str) -> None:
-    AnexoCreate(tipo=TipoAnexo.APR, nome_arquivo="apr-assinada.pdf")  # nome simples passa
-
-    with pytest.raises(ValidationError):
-        AnexoCreate(tipo=TipoAnexo.APR, nome_arquivo=nome)
 
 
 def test_certificacao_recusa_validade_anterior_a_emissao() -> None:

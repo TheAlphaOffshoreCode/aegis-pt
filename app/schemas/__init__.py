@@ -10,7 +10,6 @@ from app.schemas.organizacao import (
     UnidadeRead,
 )
 from app.schemas.permissao import (
-    AnexoCreate,
     AnexoRead,
     AssinaturaRead,
     ModeloPTCreate,
@@ -30,7 +29,6 @@ from app.schemas.pessoa import (
 
 __all__ = [
     "AlertaRead",
-    "AnexoCreate",
     "AnexoRead",
     "AreaCreate",
     "AreaRead",

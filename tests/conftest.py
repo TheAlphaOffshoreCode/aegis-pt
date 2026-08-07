@@ -5,7 +5,10 @@ import os
 os.environ["AEGIS_SECRET_KEY"] = "chave-de-teste-com-mais-de-trinta-e-dois-caracteres"
 os.environ["AEGIS_DATABASE_URL"] = "sqlite:///./test_aegis.db"
 os.environ["AEGIS_ENVIRONMENT"] = "development"
+# Uploads dos testes ficam longe da pasta real da aplicação.
+os.environ["AEGIS_UPLOAD_DIR"] = "./test_uploads"
 
+import shutil  # noqa: E402
 from collections.abc import Callable, Iterator  # noqa: E402
 
 import pytest  # noqa: E402
@@ -13,6 +16,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 import app.models  # noqa: F401,E402  registra as tabelas no metadata
+from app.config import get_settings  # noqa: E402
 from app.database import Base, SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models.enums import PerfilUsuario  # noqa: E402
@@ -20,6 +24,15 @@ from app.models.pessoa import Usuario  # noqa: E402
 from app.security.credenciais import gerar_hash  # noqa: E402
 
 SENHA_DE_TESTE = "senha-de-teste-123"
+
+
+@pytest.fixture(autouse=True)
+def _uploads_limpos() -> Iterator[None]:
+    """Cada teste começa e termina sem arquivo nenhum em disco."""
+    destino = get_settings().upload_dir
+    shutil.rmtree(destino, ignore_errors=True)
+    yield
+    shutil.rmtree(destino, ignore_errors=True)
 
 
 @pytest.fixture

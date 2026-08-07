@@ -1,6 +1,7 @@
 """Configuração da aplicação, lida exclusivamente de variáveis de ambiente."""
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field
@@ -26,6 +27,11 @@ class Settings(BaseSettings):
     # Um turno a bordo. Fica configurável porque a operação real ajusta esse número,
     # e sessão que vence no meio do turno é o que empurra gente a compartilhar login.
     token_expiracao_minutos: int = 480
+
+    # Onde os anexos são gravados. Em produção aponta para um volume; nunca para dentro de
+    # `static/`, que é servido diretamente e transformaria upload em conteúdo público.
+    upload_dir: Path = Path("uploads")
+    anexo_tamanho_maximo_mb: int = 10
 
     # Origens do PWA. Em produção, listar explicitamente; nunca "*".
     cors_origins: list[str] = ["http://localhost:8000", "http://127.0.0.1:8000"]
