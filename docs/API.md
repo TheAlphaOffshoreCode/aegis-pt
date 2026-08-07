@@ -217,6 +217,39 @@ Returns the file with the media type from the server's own map, `Content-Disposi
 attachment` and `X-Content-Type-Options: nosniff`. An attachment is third-party content and must
 never be interpreted as a page inside the application's origin.
 
+### `POST /ai/consulta`
+
+Answers a question in natural language about the permits the caller can already reach.
+
+```json
+{ "pergunta": "Quais PTs de trabalho a quente estão abertas no convés?" }
+```
+
+```json
+{ "resposta": "Há uma PT a quente aberta no convés: PT-2026-0001, solda em suporte de
+               tubulação, em rascunho.",
+  "fontes": ["PT-2026-0001"],
+  "iteracoes": 2, "tokens_entrada": 4210, "tokens_saida": 180 }
+```
+
+`fontes` are the permits the **tools actually read**, collected from what the database
+returned — not the numbers the answer happens to mention. An empty `fontes` is therefore
+impossible next to a substantive answer: with no source, the text is replaced by "não
+encontrei" in code, before the response is built. That is rule 3, and it does not depend on
+the model remembering to cite.
+
+Three tools, all read-only by construction (rule 1): `buscar_pts`, `detalhar_pt`,
+`pendencias_da_pt`. There is no tool that writes, transitions or signs, so no prompt can
+produce one. Every deadline and verdict in the answer comes from `app/rules/` already
+computed (rule 2) — the model repeats numbers, it never derives them.
+
+The caller's scope enters each tool **before** the model sees anything (rule 5): the same
+question from two users on different units retrieves different permits, and a permit outside
+scope answers as non-existent rather than as forbidden.
+
+`503` when `AEGIS_ANTHROPIC_API_KEY` is absent — the AI routes fail alone, the rest of the
+application starts and works normally.
+
 ## Business conflicts
 
 Every blocking pendency returns `409` with the structured list, produced by a single handler
@@ -265,10 +298,6 @@ removes the need it was solving. Revisit if shifts stop fitting in one token.
 
 | Loop | Endpoints |
 |---|---|
-| L5 | `/pts/{id}/transicoes`, `/pts/{id}/assinaturas` |
-| L6 | `/pts/{id}/trilha`, chain integrity verification |
-| L7 | `/pts/{id}/anexos` |
-| L8 | `/pts` structured search, `/pts/{id}/dossie` |
-| L9 | `/ai/consulta` (read-only tools) |
 | L10 | `/ai/rascunho` |
 | L11 | `/indicadores/*`, `/alertas` |
+| L12 | offline sync |

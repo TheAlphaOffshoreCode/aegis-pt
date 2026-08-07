@@ -7,6 +7,9 @@ os.environ["AEGIS_DATABASE_URL"] = "sqlite:///./test_aegis.db"
 os.environ["AEGIS_ENVIRONMENT"] = "development"
 # Uploads dos testes ficam longe da pasta real da aplicação.
 os.environ["AEGIS_UPLOAD_DIR"] = "./test_uploads"
+# Vazio de propósito, e não ausente: uma chave no `.env` da máquina faria a suíte sair para a
+# rede e cobrar. Sem chave, o agente só roda com o cliente falso injetado pelo teste.
+os.environ["AEGIS_ANTHROPIC_API_KEY"] = ""
 
 import shutil  # noqa: E402
 from collections.abc import Callable, Iterator  # noqa: E402

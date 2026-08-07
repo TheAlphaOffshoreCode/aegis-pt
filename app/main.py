@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
-from app.routers import auth, health, pts
+from app.routers import ai, auth, health, pts
 from app.rules.pendencias import ConflitoDeNegocio
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -45,6 +45,7 @@ def conflito_de_negocio(request: Request, exc: ConflitoDeNegocio) -> JSONRespons
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(pts.router)
+app.include_router(ai.router)
 
 # Montado em /static, e não em "/", para que nenhum router incluído depois seja engolido.
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

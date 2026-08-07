@@ -191,11 +191,53 @@ at a time, and answers `404` outside scope like the permit itself.
   is banned.
 - `audit_events` is append-only, hash-chained, and verified by a dedicated checker (L6).
 
-## AI surface
+## The AI surface (L9)
 
-The model is confined to `app/ai/`. Its tools are read-only by construction and receive
-data already filtered by the authenticated user's scope. Permit content is untrusted input:
-prompt-injection review of every template is part of L13.
+The model is confined to `app/ai/`, and the three AI rules are enforced by structure rather
+than by instructions — a prompt is a request, and this is a safety system.
+
+**Rule 1 — the model cannot act.** There are three tools and all of them read:
+`buscar_pts`, `detalhar_pt`, `pendencias_da_pt`. `app/ai/ferramentas.py` contains no `add`,
+no `commit`, no `delete` and no transition, so there is no technical path by which any prompt
+approves, releases or closes a permit. A test asserts the tool set itself, so adding a fourth
+tool fails the suite until someone proves it only reads.
+
+**Rule 2 — no safety number is generated.** Deadlines, validity windows, counts and verdicts
+reach the model already computed by `app/rules/`. The tool descriptions say to reproduce them
+as received, but the guarantee is that the model has no other source: it never sees a raw
+date arithmetic problem to solve.
+
+**Rule 3 — no answer without a source, enforced in code.** `executar()` returns the permit
+numbers the query actually returned, and the agent accumulates them. If that list is empty,
+`_com_fontes` discards the model's text and substitutes "não encontrei". A model that
+hallucinates a permit number in the text does not put it in `fontes`, because `fontes` never
+comes from the text. Both cases are tested.
+
+**Rule 5 — scope applied before the model sees data.** Every tool runs against the server's
+authenticated `Usuario` through `aplicar_escopo`, in the query. The model does not choose whom
+it is answering for and cannot ask about a unit it was not given. A permit outside scope
+answers exactly like one that does not exist — distinguishing them would already confirm it
+exists somewhere. Tested by running the same scripted conversation as two different users.
+
+**Rule 7 — the key.** `AEGIS_ANTHROPIC_API_KEY` is read only in `construir_cliente()`, in the
+backend. Nothing under `static/` mentions it, no route returns it, and the browser talks to
+`POST /ai/consulta` — never to api.anthropic.com. Without the key the AI routes answer `503`
+and the rest of the application starts normally, so a missing key degrades one feature instead
+of the system.
+
+The suite never reaches the network: `tests/conftest.py` sets the key to empty on purpose (a
+key in the developer's `.env` would otherwise make the tests call out and bill), and the agent
+takes an injected client.
+
+Two exposures remain open and are declared rather than assumed away:
+
+- **Prompt injection through permit content.** A requisitante writes the description, and that
+  text reaches the model inside a tool result. It cannot make the model act — there is nothing
+  to act with — but it can push the *wording* of an answer. Mitigation is L13, together with
+  the review of every template.
+- **No rate limit on `/ai/consulta`.** Each query costs tokens, and any authenticated user can
+  repeat it. Bounded per query (6 tool iterations, 8000 output tokens), unbounded per user.
+  L13, with the other hardening.
 
 ## Findings
 

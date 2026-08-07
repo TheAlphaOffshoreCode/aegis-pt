@@ -172,6 +172,21 @@ Deviations: `SUSPENSA` (only from `EM_EXECUCAO`) and `REJEITADA` (returns to `RA
   does not treat `\` as a separator, so `..\..\sam.pdf` survives intact on the server while
   looking sanitized on a Windows dev machine. `PureWindowsPath` handles both separators on
   every platform. This one shipped and was caught by CI, not locally.
+- **`tests/conftest.py` sets `AEGIS_ANTHROPIC_API_KEY` to empty on purpose.** A key present in
+  the developer's `.env` would make the suite call the real API and bill for it. Empty means
+  the agent only runs with the fake client the test injects — the suite has no network path.
+- **`temperature`, `top_p` and `top_k` are rejected with `400` on Opus 5**, and
+  `thinking.budget_tokens` with them. Reasoning is adaptive and on by default, and it shares
+  `max_tokens` with the answer — a tight ceiling truncates mid-thought. Reach for
+  `output_config: {"effort": ...}` instead of sampling knobs. There is a test asserting the
+  request carries none of the three.
+- **AI sources are collected from what the database returned, never from the answer's text.**
+  `ferramentas.executar()` returns the permits it actually read; `agente._com_fontes` throws
+  the text away when that list is empty. Reading permit numbers out of the reply with a regex
+  would make rule 3 depend on the model, which is the whole thing being avoided.
+- **Check `stop_reason == "refusal"` before touching `content`.** On a refusal the content
+  comes back empty or partial, and code that assumes a text block raises there instead of
+  answering.
 
 ## Conventions
 

@@ -12,8 +12,8 @@ audit trail that survives an incident investigation.
 
 [![CI](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml/badge.svg)](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Status: L8 of L13](https://img.shields.io/badge/status-L8_of_L13-f59e0b.svg)](#roadmap)
-[![Tests: 136](https://img.shields.io/badge/tests-136_passing-22c55e.svg)](#tests)
+[![Status: L9 of L13](https://img.shields.io/badge/status-L9_of_L13-f59e0b.svg)](#roadmap)
+[![Tests: 153](https://img.shields.io/badge/tests-153_passing-22c55e.svg)](#tests)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Offline capable](https://img.shields.io/badge/PWA-offline_planned-0ea5e9.svg)](#offshore-constraints)
 
@@ -23,7 +23,7 @@ audit trail that survives an incident investigation.
 
 ## Current state — read this before cloning
 
-**L0 through L8 are done, and the permit cycle actually closes.** A permit is opened from a
+**L0 through L9 are done, and the permit cycle actually closes.** A permit is opened from a
 form defined per work type, collects its documents, walks the approval chain gathering a
 signature at each step, gets checked by a deterministic rule engine before release, leaves a
 hash-chained trail that detects tampering, and can be pulled back out as a single dossier —
@@ -45,11 +45,29 @@ Four signatures collected, five roles involved, and the release refused because 
 NR-35 expires before the permit's own window closes — decided by tested code, not by anyone
 remembering to look.
 
+Since L9 it also answers questions in plain Portuguese — and the interesting part is what it
+refuses to do. The model reaches three tools, all of which only read, so there is no technical
+path by which any prompt approves or releases anything. Every deadline in an answer was
+computed by the rule engine, not by the model. And the sources are collected from what the
+database returned, never parsed out of the reply, so an answer with no retrieved permit is
+replaced with "não encontrei" in code rather than trusted to say so. The contract:
+
+```text
+POST /ai/consulta   {"pergunta": "Quais PTs de trabalho a quente estão abertas?"}
+
+{ "resposta": "Uma: PT-2026-0001, solda em suporte de tubulação, ainda em rascunho.",
+  "fontes": ["PT-2026-0001"] }
+```
+
+`fontes` lists what the tools read, and the same question asked by someone posted to another
+unit retrieves nothing — the scope enters the query before the model sees a single row. Both
+of those are covered by tests that run without a network or an API key; the round trip to
+Anthropic itself is exercised the moment a key is configured.
+
 **What is still missing:** ingestion of the paper archive with OCR (proposed as its own loop —
-what it actually needs is a bulk import flow, not an OCR call), the whole AI assistant
-(L9–L10), indicators and alerts (L11), the offline PWA (L12) and the closing security audit
-(L13). The interface is still a diagnostic shell — this is a working API, not a finished
-product.
+what it actually needs is a bulk import flow, not an OCR call), AI draft generation (L10),
+indicators and alerts (L11), the offline PWA (L12) and the closing security audit (L13). The
+interface is still a diagnostic shell — this is a working API, not a finished product.
 
 ## The problem
 
@@ -142,6 +160,10 @@ Paste the generated value into `AEGIS_SECRET_KEY` in `.env`. The application ref
 without a secret of at least 32 characters — a development fallback secret is precisely how a
 weak key reaches production.
 
+`AEGIS_ANTHROPIC_API_KEY` is optional and enables `POST /ai/consulta`. It is read in the
+backend only, never sent to the browser, and `.env` is gitignored. Without it everything else
+runs and that one route answers `503`.
+
 ```powershell
 python -m alembic upgrade head
 python -m app.seed
@@ -163,8 +185,10 @@ way to create accounts with a known password.
 python -m pytest -q
 ```
 
-A hundred and thirty-six tests. The ones worth naming are those that fail loudly the day a
-guarantee quietly stops holding:
+A hundred and fifty-three tests, none of which reach the network — the AI loop is exercised
+with an injected client, and the suite forces the API key empty so a key sitting in a
+developer's `.env` cannot make the tests call out and bill. The ones worth naming are those
+that fail loudly the day a guarantee quietly stops holding:
 
 - the audit chain **detects tampering** — a row edited through raw SQL, bypassing the
   application entirely, is caught, and the ORM refuses the same edit outright;
@@ -180,6 +204,12 @@ guarantee quietly stops holding:
   says zero, because a count over a wider universe leaks how much exists beyond your reach;
 - a permit outside your scope answers `404`, and the server ignores `estado`, `numero` and
   `requisitante_id` when a client sends them;
+- an AI answer that cites a permit the tools never read keeps that number out of `fontes` —
+  and an answer with no source at all is thrown away and replaced, because the citation
+  guarantee cannot depend on the model remembering to cite;
+- the same scripted conversation run as two users on different units retrieves different
+  permits, and the AI tool set itself is asserted, so a fourth tool fails the suite until
+  someone has proven it only reads;
 - SQLite foreign keys are actually enforced, and the migration is compared against the models
   and then rolled all the way back.
 
@@ -210,14 +240,17 @@ also how CI runs them, on 3.11 and 3.14.
 | `POST` | `/pts/{id}/trilha/{evento_id}/compensacao` | Corrects a record without rewriting it |
 | `POST` · `GET` · `DELETE` | `/pts/{id}/anexos` | Documents, hashed server-side on upload |
 | `GET` | `/pts/{id}/anexos/{id}/conteudo` | Download, always `attachment` + `nosniff` |
+| `POST` | `/ai/consulta` | Natural-language question, answered with the permits it read |
 | `GET` | `/` · `/static/{path}` | PWA shell and vendored assets |
 
 A blocking pendency returns `409` with a structured list — `codigo`, `severidade`, `mensagem`,
 `campo`, `responsavel` — never a bare sentence, because the screen needs to know which field to
 mark and who is expected to resolve it. `422` still means the payload did not parse at all.
 
-Still scheduled: search and dossier export at L8, the AI endpoints at L9 and L10, indicators and
-alerts at L11.
+Still scheduled: AI draft generation at L10, indicators and alerts at L11, offline sync at L12.
+
+`/ai/consulta` answers `503` when no API key is configured. The AI degrades on its own; the
+rest of the application starts and works without it.
 
 ## Roadmap
 
@@ -256,16 +289,23 @@ field-by-field diffs, and the dossier: the permit, its versions, signatures, att
 audit trail and the rule engine's current verdict, in one document. The integrity flag ships
 with it — a history that cannot say whether it was tampered with is not evidence.
 
+**L9 — done.** Natural-language search: three read-only tools, the user's scope applied inside
+the query before the model sees anything, and citation enforced in code rather than requested
+in a prompt. The sources returned are the permits the tools actually read, so an answer
+grounded in nothing is replaced with "não encontrei" instead of being trusted to admit it. The
+API key is read in the backend only, and its absence takes down the AI routes alone.
+
 **Next — the archive.** Ingesting the paper archive (bulk import, OCR, indexing) is proposed as
 its own loop rather than an appendix: what it needs is the import flow, and the OCR call is the
-small part.
+small part. After L9 it lands as one more read-only tool.
 
-**L9–L10 — the assistant.** Natural-language search over read-only tools scoped to the
-authenticated user, and draft generation that explicitly flags every field still requiring a human
-decision.
+**L10 — draft generation.** The assistant proposes a permit, and the proposal is a draft like
+any other — subject to the rule engine and the full signature chain. Proposing is not
+approving, and rule 1 does not bend for convenience.
 
 **L11–L13 — operation.** Indicators and escalating alerts, the offline PWA with conflict
-resolution, and a closing security audit.
+resolution, and a closing security audit — which includes prompt-injection review of every
+template and a rate limit on the AI endpoint, both declared open rather than assumed solved.
 
 ## Disclaimer
 

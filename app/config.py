@@ -33,6 +33,18 @@ class Settings(BaseSettings):
     upload_dir: Path = Path("uploads")
     anexo_tamanho_maximo_mb: int = 10
 
+    # Chave da Claude API. Sem default e lida só aqui, no backend (regra 7): a aplicação sobe
+    # sem ela, e apenas as rotas de IA respondem 503.
+    anthropic_api_key: str | None = None
+    ai_modelo: str = "claude-opus-5"
+    # Folga de propósito: no Opus 5 o raciocínio é adaptativo e ligado por padrão, e
+    # `max_tokens` limita raciocínio + resposta juntos — apertar aqui trunca no meio.
+    ai_max_tokens: int = 8000
+    ai_esforco: Literal["low", "medium", "high", "xhigh", "max"] = "medium"
+    # Teto de idas e voltas com ferramentas. Consulta que não converge em 6 passos não vai
+    # convergir em 20 — e cada passo custa tokens.
+    ai_max_iteracoes: int = 6
+
     # Origens do PWA. Em produção, listar explicitamente; nunca "*".
     cors_origins: list[str] = ["http://localhost:8000", "http://127.0.0.1:8000"]
 

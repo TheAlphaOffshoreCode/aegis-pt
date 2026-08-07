@@ -13,8 +13,8 @@ Fonte de verdade para retomar o trabalho. Atualizado ao fim de cada loop.
 | L6 | Trilha de auditoria imutável | ✅ concluído | 2026-08-07 |
 | L7 | Anexos e validade (OCR adiado) | ✅ concluído | 2026-08-07 |
 | L8 | Busca estruturada e dossiê | ✅ concluído | 2026-08-07 |
-| L8.5 | Acervo legado e OCR | ⏳ proposto, aguardando decisão | — |
-| L9 | IA: busca em linguagem natural | — | — |
+| L8.5 | Acervo legado e OCR | ⏳ proposto, adiado — o L9 veio antes | — |
+| L9 | IA: busca em linguagem natural | ✅ concluído | 2026-08-07 |
 | L10 | IA: geração de rascunho | — | — |
 | L11 | Indicadores e alertas | — | — |
 | L12 | PWA e operação offline | — | — |
@@ -445,6 +445,49 @@ um loop inteiro. Enfiá-lo aqui entregaria busca e acervo pela metade.
 Proposto como **L8.5 — Acervo legado e OCR**, com escopo próprio, antes do L9 (a IA precisa do
 acervo indexado para ter o que citar).
 
+---
+
+## L9 — IA: busca em linguagem natural (2026-08-07)
+
+**Entregue:** `POST /ai/consulta`, três ferramentas somente-leitura e o laço de tool-calling
+manual contra a Claude API, com as regras 1, 2, 3, 5 e 7 sustentadas por estrutura.
+**Aceite:** 153 testes passando (17 novos), a suíte inteira sem rede nem chave. Com a aplicação
+no ar sem chave, `/ai/consulta` responde 503 e `/pts` continua servindo normalmente.
+
+### Arquivos tocados
+
+| Arquivo | Papel |
+|---|---|
+| `app/ai/ferramentas.py` | `buscar_pts`, `detalhar_pt`, `pendencias_da_pt` — escopo fechado no código |
+| `app/ai/agente.py` | laço de tool-calling, coleta de fontes, substituição por "não encontrei" |
+| `app/schemas/ai.py`, `app/routers/ai.py` | contrato HTTP e o 503 sem chave |
+| `app/config.py` | `anthropic_api_key`, `ai_modelo`, `ai_max_tokens`, `ai_esforco`, `ai_max_iteracoes` |
+| `tests/conftest.py` | chave vazia à força: a suíte não tem caminho para a rede |
+| `tests/test_ia.py` | 17 testes |
+
+### Decisões
+
+- **Laço manual, não o tool runner do SDK.** Três motivos concretos: o escopo precisa entrar
+  nas ferramentas antes da chamada, as fontes são colhidas a cada passo do que o banco
+  devolveu, e assim a suíte roda com um cliente falso injetado. O runner faria o laço por nós
+  escondendo justamente os dois pontos que aqui são a garantia — e ainda é beta.
+- **A regra 3 virou código, não instrução.** `executar()` devolve as PTs que a consulta de fato
+  alcançou; sem nenhuma, `_com_fontes` joga o texto do modelo fora e responde "não encontrei".
+  Ler número de PT do texto com regex faria a regra depender do modelo, que é o que se evita.
+- **Fora do escopo responde como inexistente**, igual ao resto da API desde o L3.
+- **O conjunto de ferramentas tem teste próprio.** Ferramenta nova quebra a suíte de propósito:
+  a regra 1 é revisada por gente antes de a quarta ferramenta existir.
+- **`temperature`, `top_p` e `top_k` ficam de fora** — são `400` no Opus 5, onde o raciocínio é
+  adaptativo e ligado por padrão e divide `max_tokens` com a resposta. O controle é
+  `output_config: {"effort": "medium"}`, e há teste conferindo que os três não são enviados.
+- **Sem chave, só a IA cai.** `anthropic_api_key` nasce `None` e as rotas de IA respondem 503;
+  a aplicação sobe e opera sem elas. Chave lida só em `construir_cliente()`, no backend.
+- **Fallback de modelo (beta) ficou fora, e por escolha declarada.** Num sistema onde a resposta
+  é sobre segurança do trabalho, trocar em silêncio quem responde é decisão do William, não
+  minha. Fica proposto, não implementado.
+- **O acervo legado (L8.5) continua fora.** O L9 se sustenta sobre o acervo digital que já
+  existe; quando o OCR entrar, vira mais uma ferramenta, sem retrabalho no laço.
+
 ### Pendências abertas
 
 | # | Pendência | Loop de destino |
@@ -453,7 +496,7 @@ acervo indexado para ter o que citar).
 | P2 | `manifest.json` e service worker | L12 |
 | P3 | Cabeçalhos de segurança, rate limiting, tratamento de erro sem stack | L13 |
 | ~~P4~~ | ~~Dependências de auth~~ — `argon2-cffi` e `pyjwt` no `requirements.txt` | resolvido no L2 |
-| P5 | Dependências de IA (SDK Anthropic, índice vetorial) entram no `requirements.txt` | L9 |
+| ~~P5~~ | ~~Dependências de IA no `requirements.txt`~~ — `anthropic>=0.121`; índice vetorial não foi preciso, as ferramentas consultam o banco | resolvido no L9 |
 | P6 | `starlette.testclient` avisa que `httpx` está depreciado em favor de `httpx2` — sem efeito hoje | reavaliar em L13 |
 | ~~P7~~ | ~~Repositório sem remote~~ — publicado em TheAlphaOffshoreCode/aegis-pt, CI verde | resolvido em 05/08/2026 |
 | ~~P8~~ | ~~`security-review` sem linha de base~~ — destravada pelo commit inicial | resolvido em 05/08/2026 |
@@ -480,6 +523,11 @@ acervo indexado para ter o que citar).
 | P30 | Só a extensão é validada, não o conteúdo real do arquivo. Conferir *magic bytes* barra um `.exe` renomeado para `.pdf` | L13 |
 | P21 | Duração máxima e pares incompatíveis são constantes em `exigencias.py`. Se a operação quiser ajustar sem deploy, viram configuração | quando pedirem |
 | P22 | API aceita datetime sem fuso e o trata como UTC. Exigir offset explícito é decisão do contrato HTTP | L12/L13 |
+| P32 | **O caminho real contra a Claude API não foi exercitado**: esta máquina não tem chave. Provado o que dá — laço, escopo, fontes e 503 — com cliente falso e com a aplicação no ar. Falta uma consulta de verdade | assim que houver chave |
+| P33 | Conteúdo de PT é texto de terceiro e chega ao modelo dentro do resultado da ferramenta. Não faz o modelo agir (não há com o quê), mas influencia a redação da resposta | L13, com a revisão de prompts |
+| P34 | `/ai/consulta` sem limite de uso: cada consulta custa tokens e qualquer usuário autenticado repete à vontade. Limitado por consulta (6 iterações, 8000 tokens), não por pessoa | L13, junto com P14 |
+| P35 | A consulta por IA não entra na trilha. Quem perguntou o quê pode ser registro que a auditoria vai querer — esbarra em P26 (evento sem PT não tem cadeia) | L13 |
+| P36 | Fallback de modelo (beta) não implementado: numa recusa ou indisponibilidade, a consulta falha em vez de tentar outro modelo. Deliberado — trocar quem responde sobre segurança é decisão do William | quando o William decidir |
 
 ### Ponto exato de retomada
 
@@ -491,17 +539,29 @@ L8 fechado e verificado: 136 testes passando; o dossiê da `PT-2026-0002` reúne
 2 anexos, 6 eventos com trilha íntegra e a pendência restante, e a busca filtra por texto,
 tipo, estado e número respeitando o escopo na contagem.
 
+L9 fechado e verificado: 153 testes passando, nenhum deles saindo para a rede. Com a aplicação
+no ar e sem chave configurada, `/ai/consulta` responde 503 e `/pts` segue devolvendo as 2 PTs
+do banco de desenvolvimento — a IA cai sozinha, sem levar o resto junto.
+
+**Para usar de verdade:** pôr `AEGIS_ANTHROPIC_API_KEY` no `.env` (fora do repositório, o
+`.gitignore` já cobre) e consultar:
+
+```powershell
+curl -X POST http://127.0.0.1:8000/ai/consulta -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{\"pergunta\":\"Quais PTs estao abertas?\"}'
+```
+
 Próximo passo: **decisão do William entre dois caminhos.**
 
-**L8.5 — Acervo legado e OCR** (proposto). Escopo próprio: modelo `documento_legado`, upload em
-lote, OCR com Tesseract, indexação do texto extraído e vínculo opcional com PT. Traz a
-dependência de sistema para o CI (`apt-get install tesseract-ocr`), e é o que dá à IA do L9
-um acervo para citar. A busca textual atual (P31) provavelmente vira FTS aqui.
+**L10 — IA: geração de rascunho.** A continuação natural: a IA propõe um rascunho de PT a
+partir de uma descrição, e o rascunho nasce como rascunho — sujeito ao motor de regras e ao
+mesmo fluxo de assinatura de qualquer outro. A regra 1 continua valendo inteira: propor não é
+aprovar. Reaproveita o laço, o escopo e a coleta de fontes do L9.
 
-**L9 — IA: busca em linguagem natural.** Pode vir antes, sobre o acervo digital que já existe.
-As ferramentas do modelo precisam ser somente-leitura por construção e receber o escopo do
-usuário **antes** da chamada (regra 5), e toda resposta cita as PTs de origem — sem documento
-recuperado, a resposta é "não encontrei" (regra 3). A chave da API só no backend (regra 7).
+**L8.5 — Acervo legado e OCR** (ainda proposto). Escopo próprio: modelo `documento_legado`,
+upload em lote, OCR com Tesseract, indexação do texto extraído e vínculo opcional com PT. Traz
+a dependência de sistema para o CI (`apt-get install tesseract-ocr`). Depois do L9, entra como
+mais uma ferramenta somente-leitura, sem mexer no laço. A busca textual atual (P31)
+provavelmente vira FTS aqui.
 
 Lembretes que já custaram caro: todo modelo novo entra em `app/models/__init__.py`, senão o
 autogenerate o ignora; toda coluna de enum passa por `enum_col()`; nenhuma constraint nasce sem
