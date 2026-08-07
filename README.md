@@ -12,7 +12,8 @@ audit trail that survives an incident investigation.
 
 [![CI](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml/badge.svg)](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Status: L3 of L13](https://img.shields.io/badge/status-L3_of_L13-f59e0b.svg)](#roadmap)
+[![Status: L6 of L13](https://img.shields.io/badge/status-L6_of_L13-f59e0b.svg)](#roadmap)
+[![Tests: 104](https://img.shields.io/badge/tests-104_passing-22c55e.svg)](#tests)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Offline capable](https://img.shields.io/badge/PWA-offline_planned-0ea5e9.svg)](#offshore-constraints)
 
@@ -22,18 +23,31 @@ audit trail that survives an incident investigation.
 
 ## Current state — read this before cloning
 
-**L0 through L3 are done.** What runs today: the thirteen-table data model with its migrations,
-Argon2id login issuing a JWT session, role-based authorization with a per-unit scope applied
-inside the query, and the permit itself — created, listed, read and corrected while it is still a
-draft, with a form whose fields are defined per work type and validated by deterministic rules.
+**L0 through L6 are done, and the permit cycle actually closes.** A permit is opened from a
+form defined per work type, walks the approval chain collecting a signature at each step, gets
+checked by a deterministic rule engine before release, and leaves a hash-chained trail that
+detects tampering.
 
-**What is not there yet is the part that makes a permit a permit.** There is no state machine, so
-a draft cannot advance; no electronic signature; no audit trail; no rule engine deciding whether
-the work is safe to release; and no AI. Those are L4 through L10.
+The clearest way to say what works is to show it refusing to work. This is a real run against
+the development database:
 
-So: you can issue a draft and query it. You cannot approve, release or close anything, and
-nothing here yet blocks an expired certificate. If you cloned this expecting a working permit
-system, come back when the roadmap below has more green in it.
+```text
+criada: 201 PT-2026-0002 RASCUNHO
+  10001 -> VALIDACAO: OK      10004 -> ANALISE_SMS: OK
+  10003 -> APROVACAO: OK      10005 -> LIBERACAO: OK
+  10002 -> EM_EXECUCAO: 409 BARRADO
+      certificacao_vencida: NR-35 de Rafael Souza vence em 23/06/2026,
+                            antes do fim da janela da PT
+```
+
+Four signatures collected, five roles involved, and the release refused because one worker's
+NR-35 expires before the permit's own window closes — decided by tested code, not by anyone
+remembering to look.
+
+**What is still missing:** attachments and OCR (L7), search and dossier export (L8), the whole
+AI assistant (L9–L10), indicators and alerts (L11), the offline PWA (L12) and the closing
+security audit (L13). The interface is still a diagnostic shell — this is a working API, not a
+finished product.
 
 ## The problem
 
@@ -147,11 +161,26 @@ way to create accounts with a known password.
 python -m pytest -q
 ```
 
-Forty-nine tests. The ones worth naming are the ones that would fail loudly if a guarantee
-quietly stopped holding: SQLite foreign keys are actually enforced; the migration is compared
-against the models and then rolled all the way back; a forged `alg: none` token is rejected;
-deactivating a user cuts access before their token expires; a permit outside your scope answers
-`404`; and the server ignores `estado`, `numero` and `requisitante_id` when a client sends them.
+A hundred and four tests. The ones worth naming are those that fail loudly the day a guarantee
+quietly stops holding:
+
+- the audit chain **detects tampering** — a row edited through raw SQL, bypassing the
+  application entirely, is caught, and the ORM refuses the same edit outright;
+- an expired certificate **blocks release**, and the issuer **cannot sign their own permit**;
+- skipping a step in the flow is rejected, because the transition does not exist;
+- a forged `alg: none` token is refused, and deactivating a user cuts access before their
+  token expires;
+- an event sealed under an older payload format still verifies — adding a field must not
+  invalidate the trail written yesterday;
+- a permit outside your scope answers `404`, and the server ignores `estado`, `numero` and
+  `requisitante_id` when a client sends them;
+- SQLite foreign keys are actually enforced, and the migration is compared against the models
+  and then rolled all the way back.
+
+Forty of them touch no database at all — the rule engine, the state machine and the form
+validator are pure functions, and those forty run in **0.07 s** against roughly thirty seconds
+for the full suite. That gap is the point: a safety rule that is expensive to test ends up
+under-tested.
 
 They need no `.env` — the fixtures set the environment before importing the application, which is
 also how CI runs them, on 3.11 and 3.14.
@@ -167,14 +196,18 @@ also how CI runs them, on 3.11 and 3.14.
 | `POST` | `/pts` | Opens a permit in `RASCUNHO` |
 | `GET` | `/pts` · `/pts/{id}` | Listing and detail, scoped in the query |
 | `PATCH` | `/pts/{id}` | Corrects a permit while it is still a draft |
+| `GET` | `/pts/{id}/pendencias` | The rule engine's verdict — a query, never a decision |
+| `GET` · `POST` | `/pts/{id}/transicoes` | Available steps, and moving through them |
+| `GET` | `/pts/{id}/trilha` | The audit trail, already verified link by link |
+| `POST` | `/pts/{id}/trilha/{evento_id}/compensacao` | Corrects a record without rewriting it |
 | `GET` | `/` · `/static/{path}` | PWA shell and vendored assets |
 
 A blocking pendency returns `409` with a structured list — `codigo`, `severidade`, `mensagem`,
-`campo` — never a bare sentence, because the screen needs to know which field to mark. `422`
-still means the payload did not parse at all.
+`campo`, `responsavel` — never a bare sentence, because the screen needs to know which field to
+mark and who is expected to resolve it. `422` still means the payload did not parse at all.
 
-Still scheduled: transitions and signatures at L5, the audit trail at L6, attachments at L7,
-search and dossier export at L8, the AI endpoints at L9 and L10, indicators and alerts at L11.
+Still scheduled: attachments at L7, search and dossier export at L8, the AI endpoints at L9 and
+L10, indicators and alerts at L11.
 
 ## Roadmap
 
@@ -189,10 +222,18 @@ per-unit scope that fails closed.
 rules, and scope applied inside the query rather than to the result. Field-by-field versioning
 belongs to the state machine and moved to L5 — a draft being typed is not a revision.
 
-**L4–L6 — the controls.** The deterministic rule engine (missing document, expired certification,
-validity shorter than declared duration, incompatible simultaneous permits, hot work coinciding
-with confined space in the same area), the state machine with electronic signatures, and the
-hash-chained append-only audit trail with an integrity verifier.
+**L4 — done.** The deterministic rule engine: expired certification, window longer than the
+type allows, declared duration exceeding the window, missing or expired documents, and
+incompatible work sharing an area at overlapping times. Requirements live as data in
+`app/rules/exigencias.py`, readable by someone who knows safety and not Python.
+
+**L5 — done.** The state machine, with a signature per step, versioning on leaving the draft
+and a chained trail entry for every transition. Skipping a step is not rejected by a check —
+the transition simply does not exist in the graph.
+
+**L6 — done.** Tamper-detecting verifier, append-only enforced by the ORM, trail API and
+compensating events. The payload format is versioned, so adding a field never invalidates a
+trail already sealed.
 
 **L7–L8 — the archive.** Attachments with expiry and hashing, OCR ingestion of legacy scans,
 combined structured search, dossier export.
