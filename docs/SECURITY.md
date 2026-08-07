@@ -169,6 +169,21 @@ Attachments do not enter the permit's document hash: the hash covers the form th
 sign. Attaching and removing are recorded in the trail with actor, timestamp, context and the
 file's own hash — and removal is only possible while the permit is still a draft.
 
+## Search and dossier (L8)
+
+**The count is scoped too.** `total` in a search result goes through the same scope and filters
+as the listing. A global count would answer "how many permits exist beyond your reach?" without
+returning a single one of them — a leak that returns no rows is still a leak.
+
+A filter is not an escape hatch: passing `unidade_id` for a unit outside the caller's scope
+returns empty rather than that unit. Scope is applied always, filters only narrow further.
+
+`limite` is capped at 200, so no single call dumps the archive. Text search goes through bound
+parameters like every other query.
+
+The dossier exposes nothing new — it composes what the caller could already read one endpoint
+at a time, and answers `404` outside scope like the permit itself.
+
 ## Data integrity
 
 - Foreign keys are enforced on SQLite (`PRAGMA foreign_keys=ON` on every connection).

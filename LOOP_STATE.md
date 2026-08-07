@@ -12,7 +12,8 @@ Fonte de verdade para retomar o trabalho. Atualizado ao fim de cada loop.
 | L5 | Máquina de estados e fluxo de aprovação | ✅ concluído | 2026-08-07 |
 | L6 | Trilha de auditoria imutável | ✅ concluído | 2026-08-07 |
 | L7 | Anexos e validade (OCR adiado) | ✅ concluído | 2026-08-07 |
-| L8 | Busca estruturada e dossiê | ⏳ aguardando autorização | — |
+| L8 | Busca estruturada e dossiê | ✅ concluído | 2026-08-07 |
+| L8.5 | Acervo legado e OCR | ⏳ proposto, aguardando decisão | — |
 | L9 | IA: busca em linguagem natural | — | — |
 | L10 | IA: geração de rascunho | — | — |
 | L11 | Indicadores e alertas | — | — |
@@ -400,6 +401,50 @@ sistema, e o teste passou a conferir o valor exato esperado em vez de só procur
 
 Fica como regra: **quem manda o nome é um cliente qualquer, não o sistema de arquivos local.**
 
+---
+
+## L8 — Busca estruturada e dossiê (2026-08-07)
+
+**Entregue:** busca com onze filtros combináveis e paginação, histórico de versões com diff, e
+o dossiê completo da PT.
+**Aceite:** 136 testes passando. No banco de desenvolvimento, o dossiê da `PT-2026-0002` traz
+4 assinaturas com suas etapas, 2 anexos, 6 eventos com trilha íntegra e a pendência restante.
+
+### Arquivos tocados
+
+| Arquivo | Papel |
+|---|---|
+| `app/services/permissoes.py` | `buscar_pts` com filtros e paginação; contagem no mesmo escopo |
+| `app/services/dossie.py` | composição do dossiê e histórico de versões |
+| `app/schemas/permissao.py` | `FiltroPT`, `PaginaDePTs`, `DossieRead` |
+| `app/routers/pts.py` | busca paginada, `/versoes` e `/dossie` |
+| `tests/test_busca.py` | 17 testes |
+
+### Decisões
+
+- **`GET /pts` mudou de contrato**: devolvia lista, agora devolve página
+  (`total`, `limite`, `deslocamento`, `itens`). Quebra declarada, feita antes de existir
+  cliente — o PWA do L12 já nasce com o formato certo.
+- **A contagem passa pelo mesmo escopo e pelos mesmos filtros.** `total` global diria quantas
+  PTs existem fora do alcance de quem perguntou, sem devolver nenhuma — vazamento que não
+  retorna linha nenhuma continua sendo vazamento.
+- **Filtro não é escape**: pedir `unidade_id` fora do escopo devolve vazio, não a unidade.
+- **`texto` compara em minúsculas dos dois lados**, porque o SQLite só é insensível a
+  maiúsculas em ASCII e a descrição é em português.
+- **O dossiê carrega `trilha_integra`.** Histórico que não diz se foi adulterado não serve como
+  prova, e é como prova que o dossiê é pedido.
+- **P25 resolvida**: `PTVersao` era gravada desde o L5 e nunca exposta; agora tem endpoint
+  próprio e entra no dossiê, com o diff campo a campo.
+
+### O OCR continua fora, e vira loop próprio (L8.5)
+
+Repetir a decisão sem revisitá-la seria desonesto, então revisitei: o que falta para o OCR não
+é o OCR. É **modelo de documento legado, ingestão em lote, indexação e vínculo com a PT** —
+um loop inteiro. Enfiá-lo aqui entregaria busca e acervo pela metade.
+
+Proposto como **L8.5 — Acervo legado e OCR**, com escopo próprio, antes do L9 (a IA precisa do
+acervo indexado para ter o que citar).
+
 ### Pendências abertas
 
 | # | Pendência | Loop de destino |
@@ -422,12 +467,13 @@ Fica como regra: **quem manda o nome é um cliente qualquer, não o sistema de a
 | P16 | Criação e edição de PT já entram na trilha. Falta o evento de **login**, que não tem PT e por isso fica fora da cadeia por PT — decidir se ganha trilha própria | L13 |
 | P26 | A cadeia é por PT. Não há cadeia global, então um evento sem PT (login) não tem onde encadear | L13 |
 | P27 | O verificador percorre a cadeia inteira a cada consulta. Com trilha longa isso vira leitura completa por chamada | L11 |
-| P17 | `GET /pts` não pagina. Enquanto o escopo é uma unidade, cabe; entra com a busca estruturada | L8 |
+| ~~P17~~ | ~~`GET /pts` sem paginação~~ — página com `total` no mesmo escopo | resolvido no L8 |
+| P31 | Busca textual usa `LIKE %termo%`, que não usa índice. Com acervo grande, vira FTS (SQLite FTS5 / `tsvector` no Postgres) | L8.5 |
 | ~~P18~~ | ~~Nenhuma regra de risco~~ — motor determinístico entregue e exposto em `/pts/{id}/pendencias` | resolvido no L4 |
 | ~~P19~~ | ~~Veredito do motor não impede nada~~ — entrada em `EM_EXECUCAO` exige risco limpo | resolvido no L5 |
 | P23 | Retomada de PT suspensa não gera assinatura, só evento de trilha. Se a operação exigir assinatura formal, é índice parcial ou tabela de eventos assinados | quando pedirem |
 | ~~P24~~ | ~~Sem verificador, API de trilha e compensação~~ — os três entregues | resolvido no L6 |
-| P25 | `PTVersao` é gravada mas não exposta: falta endpoint de histórico e diff | L8 |
+| ~~P25~~ | ~~`PTVersao` gravada e não exposta~~ — `/pts/{id}/versoes` e dossiê, com diff | resolvido no L8 |
 | ~~P20~~ | ~~`documento_ausente` sempre acusando~~ — upload entregue; a pendência some quando o papel chega | resolvido no L7 |
 | P28 | **OCR do acervo legado.** Adiado por decisão: exige Tesseract como dependência de sistema e depende de um fluxo de importação em lote que ainda não existe | L8 |
 | P29 | Anexo removido some do disco depois do commit. Se o `unlink` falhar, sobra arquivo órfão — inverter a ordem deixaria linha apontando para nada, que é pior | L13 |
@@ -441,20 +487,21 @@ L1 fechado e verificado: 20 testes passando, `alembic upgrade head` e `downgrade
 o seed roda duas vezes sem duplicar, `/health` continua 200. O clone do PC A precisou de `.venv`
 e `.env` próprios — nenhum dos dois vem do repositório.
 
-L7 fechado e verificado: 118 testes passando; no banco de desenvolvimento, anexar APR e ASO
-apagou a pendência `documento_ausente` que existia desde o L4, e um nome enviado como
-`../../ASO Rafael.pdf` foi guardado apenas como `ASO Rafael.pdf`.
+L8 fechado e verificado: 136 testes passando; o dossiê da `PT-2026-0002` reúne 4 assinaturas,
+2 anexos, 6 eventos com trilha íntegra e a pendência restante, e a busca filtra por texto,
+tipo, estado e número respeitando o escopo na contagem.
 
-Próximo passo: **L8 — Busca estruturada e dossiê**, com o OCR (P28) entrando junto. O terreno:
+Próximo passo: **decisão do William entre dois caminhos.**
 
-- A listagem de `/pts` já filtra por estado, tipo e vigência, **sem paginação** (P17) — o L8 é
-  onde isso deixa de escalar e precisa ser resolvido.
-- `PTVersao` é gravada desde o L5 e **nunca foi exposta** (P25): o dossiê é o lugar natural do
-  histórico com diff.
-- O dossiê reúne o que já existe: PT, versões, assinaturas, anexos e trilha conferida. Nenhum
-  dado novo — a regra 5 continua valendo, e o escopo entra na consulta.
-- O OCR só faz sentido com um fluxo de importação de acervo: modelo para o documento legado,
-  ingestão em lote e indexação. Se for grande, é loop próprio, não apêndice do L8.
+**L8.5 — Acervo legado e OCR** (proposto). Escopo próprio: modelo `documento_legado`, upload em
+lote, OCR com Tesseract, indexação do texto extraído e vínculo opcional com PT. Traz a
+dependência de sistema para o CI (`apt-get install tesseract-ocr`), e é o que dá à IA do L9
+um acervo para citar. A busca textual atual (P31) provavelmente vira FTS aqui.
+
+**L9 — IA: busca em linguagem natural.** Pode vir antes, sobre o acervo digital que já existe.
+As ferramentas do modelo precisam ser somente-leitura por construção e receber o escopo do
+usuário **antes** da chamada (regra 5), e toda resposta cita as PTs de origem — sem documento
+recuperado, a resposta é "não encontrei" (regra 3). A chave da API só no backend (regra 7).
 
 Lembretes que já custaram caro: todo modelo novo entra em `app/models/__init__.py`, senão o
 autogenerate o ignora; toda coluna de enum passa por `enum_col()`; nenhuma constraint nasce sem

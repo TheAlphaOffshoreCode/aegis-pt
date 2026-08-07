@@ -12,8 +12,8 @@ audit trail that survives an incident investigation.
 
 [![CI](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml/badge.svg)](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Status: L7 of L13](https://img.shields.io/badge/status-L7_of_L13-f59e0b.svg)](#roadmap)
-[![Tests: 118](https://img.shields.io/badge/tests-118_passing-22c55e.svg)](#tests)
+[![Status: L8 of L13](https://img.shields.io/badge/status-L8_of_L13-f59e0b.svg)](#roadmap)
+[![Tests: 136](https://img.shields.io/badge/tests-136_passing-22c55e.svg)](#tests)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Offline capable](https://img.shields.io/badge/PWA-offline_planned-0ea5e9.svg)](#offshore-constraints)
 
@@ -23,10 +23,11 @@ audit trail that survives an incident investigation.
 
 ## Current state — read this before cloning
 
-**L0 through L7 are done, and the permit cycle actually closes.** A permit is opened from a
+**L0 through L8 are done, and the permit cycle actually closes.** A permit is opened from a
 form defined per work type, collects its documents, walks the approval chain gathering a
-signature at each step, gets checked by a deterministic rule engine before release, and leaves
-a hash-chained trail that detects tampering.
+signature at each step, gets checked by a deterministic rule engine before release, leaves a
+hash-chained trail that detects tampering, and can be pulled back out as a single dossier —
+data, versions, signatures, attachments, trail, and whether that trail still verifies.
 
 The clearest way to say what works is to show it refusing to work. This is a real run against
 the development database:
@@ -44,10 +45,10 @@ Four signatures collected, five roles involved, and the release refused because 
 NR-35 expires before the permit's own window closes — decided by tested code, not by anyone
 remembering to look.
 
-**What is still missing:** search and dossier export (L8), OCR ingestion of the paper archive
-(deferred from L7 — it needs a bulk import flow that does not exist yet), the whole AI
-assistant (L9–L10), indicators and alerts (L11), the offline PWA (L12) and the closing security
-audit (L13). The interface is still a diagnostic shell — this is a working API, not a finished
+**What is still missing:** ingestion of the paper archive with OCR (proposed as its own loop —
+what it actually needs is a bulk import flow, not an OCR call), the whole AI assistant
+(L9–L10), indicators and alerts (L11), the offline PWA (L12) and the closing security audit
+(L13). The interface is still a diagnostic shell — this is a working API, not a finished
 product.
 
 ## The problem
@@ -162,7 +163,7 @@ way to create accounts with a known password.
 python -m pytest -q
 ```
 
-A hundred and eighteen tests. The ones worth naming are those that fail loudly the day a
+A hundred and thirty-six tests. The ones worth naming are those that fail loudly the day a
 guarantee quietly stops holding:
 
 - the audit chain **detects tampering** — a row edited through raw SQL, bypassing the
@@ -175,13 +176,15 @@ guarantee quietly stops holding:
   invalidate the trail written yesterday;
 - an upload named `../../etc/passwd.pdf` is stored as `passwd.pdf`, an `.html` upload is
   refused outright, and every download comes back as `attachment` with `nosniff`;
+- a paginated search filtered to a unit outside your scope returns empty — and its `total`
+  says zero, because a count over a wider universe leaks how much exists beyond your reach;
 - a permit outside your scope answers `404`, and the server ignores `estado`, `numero` and
   `requisitante_id` when a client sends them;
 - SQLite foreign keys are actually enforced, and the migration is compared against the models
   and then rolled all the way back.
 
 Thirty-seven of them touch no database at all — the rule engine, the state machine and the form
-validator are pure functions, and those thirty-seven run in **0.08 s** against roughly thirty
+validator are pure functions, and those thirty-seven run in **0.07 s** against roughly forty-five
 seconds for the full suite. That gap is the point: a safety rule that is expensive to test ends
 up under-tested.
 
@@ -197,7 +200,9 @@ also how CI runs them, on 3.11 and 3.14.
 | `GET` | `/auth/eu` | Who is authenticated, and which units they reach |
 | `GET` | `/pts/modelos/{tipo_trabalho}` | Form definition for a work type |
 | `POST` | `/pts` | Opens a permit in `RASCUNHO` |
-| `GET` | `/pts` · `/pts/{id}` | Listing and detail, scoped in the query |
+| `GET` | `/pts` | Structured search, paginated, scoped in query **and** count |
+| `GET` | `/pts/{id}` · `/pts/{id}/versoes` | Detail, and version history with diffs |
+| `GET` | `/pts/{id}/dossie` | The whole permit in one document, integrity included |
 | `PATCH` | `/pts/{id}` | Corrects a permit while it is still a draft |
 | `GET` | `/pts/{id}/pendencias` | The rule engine's verdict — a query, never a decision |
 | `GET` · `POST` | `/pts/{id}/transicoes` | Available steps, and moving through them |
@@ -246,8 +251,14 @@ still a draft. **OCR was deliberately deferred** — it needs Tesseract as a sys
 a bulk-import flow for the paper archive that does not exist yet. Building it now would be
 building the part nobody calls.
 
-**L8 — the archive.** Combined structured search, dossier export, permit history with diffs,
-and the OCR ingestion carried over from L7.
+**L8 — done.** Structured search with eleven combinable filters and paging, version history with
+field-by-field diffs, and the dossier: the permit, its versions, signatures, attachments, crew,
+audit trail and the rule engine's current verdict, in one document. The integrity flag ships
+with it — a history that cannot say whether it was tampered with is not evidence.
+
+**Next — the archive.** Ingesting the paper archive (bulk import, OCR, indexing) is proposed as
+its own loop rather than an appendix: what it needs is the import flow, and the OCR call is the
+small part.
 
 **L9–L10 — the assistant.** Natural-language search over read-only tools scoped to the
 authenticated user, and draft generation that explicitly flags every field still requiring a human

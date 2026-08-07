@@ -7,9 +7,10 @@ escolher em que estado a permissão está.
 
 from datetime import date, datetime
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.enums import EstadoPT, PapelAssinatura, TipoAnexo, TipoTrabalho
+from app.schemas.auditoria import AuditEventRead
 from app.schemas.base import ORMDatado, ORMSchema
 
 
@@ -117,6 +118,38 @@ class AnexoRead(ORMSchema):
     criado_em: datetime
 
 
+class FiltroPT(BaseModel):
+    """Filtros da busca, usados como parâmetros de consulta.
+
+    Todos combinam entre si com `E`. O escopo do usuário não está aqui de propósito: ele não é
+    filtro que alguém escolhe, é restrição aplicada sempre.
+    """
+
+    numero: str | None = Field(default=None, max_length=20)
+    texto: str | None = Field(default=None, max_length=200, description="Busca na descrição")
+    estado: EstadoPT | None = None
+    tipo_trabalho: TipoTrabalho | None = None
+    unidade_id: int | None = None
+    area_id: int | None = None
+    equipamento_id: int | None = None
+    requisitante_id: int | None = None
+    vigentes_em: datetime | None = None
+    inicio_apos: datetime | None = None
+    inicio_antes: datetime | None = None
+
+    limite: int = Field(default=50, ge=1, le=200)
+    deslocamento: int = Field(default=0, ge=0)
+
+
+class PaginaDePTs(BaseModel):
+    """Uma página de resultados. `total` é a contagem sem o recorte, para a tela paginar."""
+
+    total: int
+    limite: int
+    deslocamento: int
+    itens: list["PermissaoTrabalhoRead"]
+
+
 class PendenciaRead(BaseModel):
     """Veredito do motor de regras. `codigo` e `campo` são o que a tela usa para marcar o erro."""
 
@@ -133,6 +166,26 @@ class AvaliacaoRead(BaseModel):
     pt_id: int
     numero: str
     liberavel: bool
+    pendencias: list[PendenciaRead]
+
+
+class DossieRead(BaseModel):
+    """A PT e tudo o que aconteceu com ela.
+
+    `trilha_integra` vem junto de propósito: histórico que não diz se foi adulterado não serve
+    como prova, e é exatamente como prova que este documento é pedido.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    pt: "PermissaoTrabalhoRead"
+    versoes: list["PTVersaoRead"]
+    assinaturas: list["AssinaturaRead"]
+    anexos: list["AnexoRead"]
+    equipe: list["PTEquipeRead"]
+    eventos: list[AuditEventRead]
+    trilha_integra: bool
+    quebras: list[dict]
     pendencias: list[PendenciaRead]
 
 

@@ -161,11 +161,15 @@ def test_escopo_esconde_pt_de_outra_unidade_e_auditor_ve_tudo(
 
     de_fora = autenticar("70002")
     assert client.get(f"/pts/{pt['id']}", headers=de_fora).status_code == 404
-    assert client.get("/pts", headers=de_fora).json() == []
+    pagina = client.get("/pts", headers=de_fora).json()
+    # O `total` também é do escopo: contar num universo maior que o exibido já diria
+    # quantas PTs existem fora do alcance de quem perguntou.
+    assert pagina["itens"] == []
+    assert pagina["total"] == 0
 
     auditor = autenticar("70003")
     assert client.get(f"/pts/{pt['id']}", headers=auditor).status_code == 200
-    assert len(client.get("/pts", headers=auditor).json()) == 1
+    assert client.get("/pts", headers=auditor).json()["total"] == 1
 
 
 def test_criar_pt_em_unidade_fora_da_lotacao_e_bloqueado(

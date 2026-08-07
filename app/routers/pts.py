@@ -12,22 +12,26 @@ from app.audit.trilha import Contexto
 from app.database import get_db
 from app.models.auditoria import AuditEvent
 from app.models.enums import EstadoPT, PerfilUsuario, TipoAnexo, TipoTrabalho
-from app.models.permissao import Anexo, ModeloPT, PermissaoTrabalho
+from app.models.permissao import Anexo, ModeloPT, PermissaoTrabalho, PTVersao
 from app.models.pessoa import Usuario
 from app.rules.pendencias import bloqueiam
 from app.schemas.auditoria import AuditEventRead, CompensacaoRequest, TrilhaRead
 from app.schemas.permissao import (
     AnexoRead,
     AvaliacaoRead,
+    DossieRead,
+    FiltroPT,
     ModeloPTRead,
+    PaginaDePTs,
     PermissaoTrabalhoCreate,
     PermissaoTrabalhoRead,
     PermissaoTrabalhoUpdate,
+    PTVersaoRead,
     TransicaoDisponivel,
     TransicaoRequest,
 )
 from app.security.dependencias import exigir_perfis, usuario_atual
-from app.services import anexos, auditoria, permissoes
+from app.services import anexos, auditoria, dossie, permissoes
 from app.services.transicoes import executar_transicao, transicoes_disponiveis
 
 router = APIRouter(prefix="/pts", tags=["permissões de trabalho"])
@@ -66,16 +70,17 @@ def criar(
     return permissoes.criar_pt(db, dados, autor, _contexto(request, None))
 
 
-@router.get("", response_model=list[PermissaoTrabalhoRead])
+@router.get("", response_model=PaginaDePTs)
 def listar(
-    estado: EstadoPT | None = None,
-    tipo_trabalho: TipoTrabalho | None = None,
-    vigentes_em: datetime | None = Query(default=None),
+    filtro: FiltroPT = Depends(),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(usuario_atual),
-) -> list[PermissaoTrabalho]:
-    """PTs que o usuário alcança. O escopo entra na consulta, não no resultado."""
-    return list(permissoes.listar_pts(db, usuario, estado, tipo_trabalho, vigentes_em))
+) -> PaginaDePTs:
+    """Busca paginada. O escopo entra na consulta e na contagem, nunca no resultado."""
+    total, itens = permissoes.buscar_pts(db, usuario, filtro)
+    return PaginaDePTs(
+        total=total, limite=filtro.limite, deslocamento=filtro.deslocamento, itens=itens
+    )
 
 
 @router.get("/{pt_id}", response_model=PermissaoTrabalhoRead)
@@ -150,6 +155,26 @@ def transicionar(
         motivo=dados.motivo,
         contexto=_contexto(request, dados.geolocalizacao),
     )
+
+
+@router.get("/{pt_id}/versoes", response_model=list[PTVersaoRead])
+def versoes(
+    pt_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(usuario_atual),
+) -> list[PTVersao]:
+    """Histórico de versões da PT, com o retrato e o diff de cada revisão."""
+    return list(dossie.versoes_da_pt(db, _pt_no_escopo(db, pt_id, usuario)))
+
+
+@router.get("/{pt_id}/dossie", response_model=DossieRead)
+def dossie_da_pt(
+    pt_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(usuario_atual),
+) -> dict:
+    """A PT inteira: versões, assinaturas, anexos, equipe, trilha conferida e pendências."""
+    return dossie.montar(db, _pt_no_escopo(db, pt_id, usuario))
 
 
 @router.get("/{pt_id}/trilha", response_model=TrilhaRead)

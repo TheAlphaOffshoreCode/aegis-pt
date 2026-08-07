@@ -22,7 +22,11 @@ from app.rules.exigencias import ESTADOS_QUE_OCUPAM_A_AREA
 from app.rules.formulario import validar_respostas
 from app.rules.motor import avaliar_pt
 from app.rules.pendencias import ConflitoDeNegocio, Pendencia, bloqueiam, bloqueio
-from app.schemas.permissao import PermissaoTrabalhoCreate, PermissaoTrabalhoUpdate
+from app.schemas.permissao import (
+    FiltroPT,
+    PermissaoTrabalhoCreate,
+    PermissaoTrabalhoUpdate,
+)
 from app.security.dependencias import unidades_visiveis
 
 PERFIS_QUE_EMITEM = (
@@ -208,25 +212,58 @@ def criar_pt(
     )
 
 
-def listar_pts(
-    db: Session,
-    usuario: Usuario,
-    estado: EstadoPT | None = None,
-    tipo_trabalho: TipoTrabalho | None = None,
-    vigentes_em: datetime | None = None,
-) -> Sequence[PermissaoTrabalho]:
-    """Lista as PTs que o usuário alcança, já filtradas no banco."""
-    consulta = aplicar_escopo(select(PermissaoTrabalho), usuario)
-    if estado is not None:
-        consulta = consulta.where(PermissaoTrabalho.estado == estado)
-    if tipo_trabalho is not None:
-        consulta = consulta.where(PermissaoTrabalho.tipo_trabalho == tipo_trabalho)
-    if vigentes_em is not None:
-        consulta = consulta.where(
-            PermissaoTrabalho.valida_de <= vigentes_em,
-            PermissaoTrabalho.valida_ate >= vigentes_em,
-        )
-    return db.scalars(consulta.order_by(PermissaoTrabalho.id.desc())).all()
+def _condicoes_do_filtro(filtro: FiltroPT) -> list:
+    """Traduz o filtro em condições SQL. Campo vazio não vira condição nenhuma."""
+    condicoes = []
+    if filtro.numero:
+        condicoes.append(PermissaoTrabalho.numero.contains(filtro.numero.upper()))
+    if filtro.texto:
+        # `lower()` dos dois lados: o SQLite só é insensível a maiúsculas em ASCII, e a
+        # descrição vem em português. Sem isso, "SOLDA" não acha "solda".
+        condicoes.append(func.lower(PermissaoTrabalho.descricao).contains(filtro.texto.lower()))
+    if filtro.estado is not None:
+        condicoes.append(PermissaoTrabalho.estado == filtro.estado)
+    if filtro.tipo_trabalho is not None:
+        condicoes.append(PermissaoTrabalho.tipo_trabalho == filtro.tipo_trabalho)
+    if filtro.unidade_id is not None:
+        condicoes.append(PermissaoTrabalho.unidade_id == filtro.unidade_id)
+    if filtro.area_id is not None:
+        condicoes.append(PermissaoTrabalho.area_id == filtro.area_id)
+    if filtro.equipamento_id is not None:
+        condicoes.append(PermissaoTrabalho.equipamento_id == filtro.equipamento_id)
+    if filtro.requisitante_id is not None:
+        condicoes.append(PermissaoTrabalho.requisitante_id == filtro.requisitante_id)
+    if filtro.vigentes_em is not None:
+        condicoes.append(PermissaoTrabalho.valida_de <= filtro.vigentes_em)
+        condicoes.append(PermissaoTrabalho.valida_ate >= filtro.vigentes_em)
+    if filtro.inicio_apos is not None:
+        condicoes.append(PermissaoTrabalho.valida_de >= filtro.inicio_apos)
+    if filtro.inicio_antes is not None:
+        condicoes.append(PermissaoTrabalho.valida_de <= filtro.inicio_antes)
+    return condicoes
+
+
+def buscar_pts(
+    db: Session, usuario: Usuario, filtro: FiltroPT
+) -> tuple[int, Sequence[PermissaoTrabalho]]:
+    """Busca paginada dentro do escopo do usuário.
+
+    Devolve o total **antes** do recorte, senão a tela não sabe quantas páginas existem. A
+    contagem passa pelo mesmo escopo e pelos mesmos filtros — contar num universo maior que o
+    exibido já entregaria quantas PTs existem fora do alcance de quem perguntou.
+    """
+    condicoes = _condicoes_do_filtro(filtro)
+    base = aplicar_escopo(select(PermissaoTrabalho), usuario).where(*condicoes)
+
+    total = db.scalar(
+        aplicar_escopo(select(func.count(PermissaoTrabalho.id)), usuario).where(*condicoes)
+    )
+    itens = db.scalars(
+        base.order_by(PermissaoTrabalho.id.desc())
+        .limit(filtro.limite)
+        .offset(filtro.deslocamento)
+    ).all()
+    return total or 0, itens
 
 
 def concorrentes_na_area(db: Session, pt: PermissaoTrabalho) -> Sequence[PermissaoTrabalho]:

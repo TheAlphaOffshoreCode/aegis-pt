@@ -75,14 +75,40 @@ Opens a permit in `RASCUNHO`. Restricted to `requisitante`, `area_responsavel` a
 ignored if sent. The number is `PT-AAAA-NNNN`, sequential within the year of **issue** — a
 permit opened in December for January work belongs to December's numbering.
 
-### `GET /pts` · `GET /pts/{id}` · `PATCH /pts/{id}`
+### `GET /pts` — structured search
 
-Listing accepts `estado`, `tipo_trabalho` and `vigentes_em`. Scope is applied **in the query**
-(rule 5), never to the result.
+Filters combine with `AND`: `numero`, `texto` (matches the description, case-insensitive),
+`estado`, `tipo_trabalho`, `unidade_id`, `area_id`, `equipamento_id`, `requisitante_id`,
+`vigentes_em`, `inicio_apos`, `inicio_antes`. Paging via `limite` (1–200, default 50) and
+`deslocamento`.
+
+```json
+{ "total": 137, "limite": 50, "deslocamento": 0, "itens": [ ... ] }
+```
+
+`total` is the count **before** the page cut — the screen needs it to know how many pages
+exist. It goes through the same scope and the same filters as the listing: counting over a
+wider universe than the one displayed would already tell the caller how many permits exist
+beyond their reach.
+
+Passing `unidade_id` for a unit outside your scope returns empty, not that unit. Scope is not
+a filter anyone chooses; it is a restriction always applied.
+
+### `GET /pts/{id}` · `PATCH /pts/{id}`
 
 A permit outside the caller's scope answers `404`, not `403` — "you may not see this one"
 already confirms it exists. `PATCH` only edits a permit still in `RASCUNHO`, and only by its
 requester; anything else is a state transition, which is L5.
+
+### `GET /pts/{id}/versoes` · `GET /pts/{id}/dossie`
+
+`versoes` returns the history: each revision's snapshot plus a field-by-field `diff` against
+the previous one, the author and the reason.
+
+`dossie` is the whole permit in one document — data, versions, signatures, attachments, crew,
+audit trail, **whether that trail still verifies**, and the rule engine's current verdict. The
+integrity flag travels with it on purpose: a history that does not say whether it was tampered
+with is not evidence, and evidence is exactly what a dossier is requested as.
 
 ### `GET /pts/{id}/pendencias`
 
