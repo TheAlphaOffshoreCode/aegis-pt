@@ -57,6 +57,52 @@ Requires `Authorization: Bearer <token>`. Returns who is authenticated and what 
 `unidades: null` means global reach (`auditor`, `admin`). An empty list means the account has
 no posting and therefore sees nothing — the scope fails closed.
 
+### `GET /pts/modelos/{tipo_trabalho}`
+
+The active form definition for a work type — what the PWA renders the screen from. Each field
+carries `chave`, `rotulo`, `tipo` (`texto`, `numero`, `data`, `booleano`, `selecao`),
+`obrigatorio` and, for `selecao`, its `opcoes`.
+
+Registered **before** `/pts/{pt_id}`: Starlette matches in registration order, so the reverse
+order would make this route unreachable.
+
+### `POST /pts`
+
+Opens a permit in `RASCUNHO`. Restricted to `requisitante`, `area_responsavel` and
+`coordenador` (plus `admin`).
+
+`numero`, `uuid`, `estado`, `versao` and `requisitante_id` are assigned by the server and
+ignored if sent. The number is `PT-AAAA-NNNN`, sequential within the year of **issue** — a
+permit opened in December for January work belongs to December's numbering.
+
+### `GET /pts` · `GET /pts/{id}` · `PATCH /pts/{id}`
+
+Listing accepts `estado`, `tipo_trabalho` and `vigentes_em`. Scope is applied **in the query**
+(rule 5), never to the result.
+
+A permit outside the caller's scope answers `404`, not `403` — "you may not see this one"
+already confirms it exists. `PATCH` only edits a permit still in `RASCUNHO`, and only by its
+requester; anything else is a state transition, which is L5.
+
+## Business conflicts
+
+Every blocking pendency returns `409` with the structured list, produced by a single handler
+so no route invents its own shape:
+
+```json
+{ "detail": [ { "codigo": "campo_obrigatorio", "severidade": "bloqueante",
+                "mensagem": "'Vigia de fogo designado' é obrigatório e não foi preenchido",
+                "campo": "vigia_de_fogo", "responsavel": null } ] }
+```
+
+Codes so far: `campo_obrigatorio`, `tipo_invalido`, `opcao_invalida`, `campo_desconhecido`,
+`modelo_invalido`, `modelo_incompativel`, `area_invalida`, `equipamento_invalido`,
+`membro_invalido`, `fora_do_escopo`, `pt_nao_editavel`, `nao_e_o_requisitante`,
+`numero_em_disputa`.
+
+`422` remains what it always was: the payload did not even parse. `409` means it parsed and
+the business refused it.
+
 ## Authentication
 
 Bearer JWT, `HS256`, signed with `AEGIS_SECRET_KEY`, valid for
@@ -74,7 +120,6 @@ removes the need it was solving. Revisit if shifts stop fitting in one token.
 
 | Loop | Endpoints |
 |---|---|
-| L3 | `/pts` CRUD, dynamic form schema per work type |
 | L5 | `/pts/{id}/transicoes`, `/pts/{id}/assinaturas` |
 | L6 | `/pts/{id}/trilha`, chain integrity verification |
 | L7 | `/pts/{id}/anexos` |

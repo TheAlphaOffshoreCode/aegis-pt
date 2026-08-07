@@ -120,6 +120,16 @@ Deviations: `SUSPENSA` (only from `EM_EXECUCAO`) and `REJEITADA` (returns to `RA
   a missing credential is `401`.
 - **Adding a `NOT NULL` column needs `server_default` in the migration** whenever the table
   already has rows. Autogenerate omits it and the upgrade fails on a populated database.
+- **`/pts/modelos/{tipo}` is registered before `/pts/{pt_id}`.** Starlette matches in
+  registration order; reversed, the literal route is never reached.
+- **Out of scope answers `404`, never `403`.** "You may not see this one" already confirms
+  the permit exists.
+- **`_obter_ou_criar` in the seed does not update rows that already exist.** Anything a later
+  loop adds to `usuario` needs an explicit repair pass, or a database seeded by an earlier
+  loop silently keeps the old shape. Cost so far: senha and lotação, both with tests.
+- **Foreign keys coming from the payload get validated in the service**, not left to the
+  database. An `IntegrityError` at commit is a `500` where a pendency naming the field was
+  possible.
 
 ## Conventions
 

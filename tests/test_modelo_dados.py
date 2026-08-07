@@ -203,3 +203,28 @@ def test_seed_e_idempotente_e_deixa_uma_certificacao_vencida(db: Session) -> Non
     vencidas = [c for c in certificacoes if c.valida_ate < date.today()]
     assert len(vencidas) == 1
     assert vencidas[0].tipo == TipoCertificacao.NR_35
+
+
+def test_seed_repara_usuario_criado_antes_da_credencial_existir(db: Session) -> None:
+    """`_obter_ou_criar` não atualiza quem já existe — senha e lotação precisam ser reparadas.
+
+    Sem isto, base semeada antes do L2 loga ninguém e, se logasse, emitiria PT nenhuma.
+    """
+    antigo = Usuario(
+        matricula="10001",
+        nome="Carlos Menezes",
+        email="antigo@exemplo.com",
+        empresa="Alpha Offshore",
+        cargo="Encarregado",
+        perfil=PerfilUsuario.REQUISITANTE,
+    )
+    db.add(antigo)
+    db.commit()
+    assert antigo.senha_hash == ""
+    assert antigo.unidade_id is None
+
+    semear(db)
+
+    db.refresh(antigo)
+    assert antigo.senha_hash.startswith("$argon2")
+    assert antigo.unidade_id is not None

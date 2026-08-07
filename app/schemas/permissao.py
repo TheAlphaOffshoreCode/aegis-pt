@@ -44,12 +44,11 @@ class PTEquipeRead(ORMSchema):
     funcao: str
 
 
-class PermissaoTrabalhoCreate(BaseModel):
-    """Entrada de criação. Número, uuid, estado e versão são do servidor, nunca do cliente."""
+class _PermissaoTrabalhoEntrada(BaseModel):
+    """Campos que o cliente pode informar. Número, uuid, estado e versão nunca estão aqui."""
 
     tipo_trabalho: TipoTrabalho
     modelo_pt_id: int
-    unidade_id: int
     area_id: int
     equipamento_id: int | None = None
     descricao: str = Field(min_length=1)
@@ -61,11 +60,19 @@ class PermissaoTrabalhoCreate(BaseModel):
     equipe: list[PTEquipeCreate] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def _janela_valida(self) -> "PermissaoTrabalhoCreate":
+    def _janela_valida(self) -> "_PermissaoTrabalhoEntrada":
         """Janela invertida deixaria a PT vencida no instante em que nasce."""
         if self.valida_ate <= self.valida_de:
             raise ValueError("valida_ate precisa ser posterior a valida_de")
         return self
+
+
+class PermissaoTrabalhoCreate(_PermissaoTrabalhoEntrada):
+    unidade_id: int
+
+
+class PermissaoTrabalhoUpdate(_PermissaoTrabalhoEntrada):
+    """Correção de rascunho. A unidade não muda: mudá-la seria emitir outra PT."""
 
 
 class PermissaoTrabalhoRead(ORMDatado):

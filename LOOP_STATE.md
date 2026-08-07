@@ -7,8 +7,8 @@ Fonte de verdade para retomar o trabalho. Atualizado ao fim de cada loop.
 | L0 | Bootstrap | ✅ concluído | 2026-08-05 |
 | L1 | Modelo de dados e migrations | ✅ concluído | 2026-08-07 |
 | L2 | Autenticação e RBAC | ✅ concluído | 2026-08-07 |
-| L3 | CRUD de PT e formulário dinâmico | ⏳ aguardando autorização | — |
-| L4 | Motor de regras determinístico | — | — |
+| L3 | CRUD de PT e formulário dinâmico | ✅ concluído | 2026-08-07 |
+| L4 | Motor de regras determinístico | ⏳ aguardando autorização | — |
 | L5 | Máquina de estados e fluxo de aprovação | — | — |
 | L6 | Trilha de auditoria imutável | — | — |
 | L7 | Anexos, validade e OCR | — | — |
@@ -148,6 +148,54 @@ credencial, e a migration nova sobe numa base que já tinha usuários.
 - A guarda do seed foi movida de `main()` para `semear()`: quem importa a função também
   esbarra nela.
 
+---
+
+## L3 — CRUD de PT e formulário dinâmico (2026-08-07)
+
+**Entregue:** ciclo de rascunho da PT, formulário dinâmico validado por regra determinística,
+escopo aplicado na consulta e o padrão de conflito `409` com pendência estruturada.
+**Aceite:** 49 testes passando; PT criada ponta a ponta contra o banco de desenvolvimento
+(`PT-2026-0001`, `RASCUNHO`), e formulário incompleto devolve 409 apontando cada campo.
+
+### Arquivos tocados
+
+| Arquivo | Papel |
+|---|---|
+| `app/rules/pendencias.py` | `Pendencia`, `Severidade`, `ConflitoDeNegocio` |
+| `app/rules/formulario.py` | validação das respostas contra a definição do modelo |
+| `app/services/permissoes.py` | criar, listar, obter, atualizar; numeração; escopo na query |
+| `app/routers/pts.py` | `/pts`, `/pts/{id}`, `/pts/modelos/{tipo_trabalho}` |
+| `app/schemas/permissao.py` | `_PermissaoTrabalhoEntrada`, `Create`, `Update` |
+| `app/main.py` | handler único de `ConflitoDeNegocio` → 409 |
+| `app/seed.py` | 2 modelos de PT com campos e checklist; reparo de lotação |
+| `tests/conftest.py` | fixtures `criar_usuario` e `autenticar`, reusadas por todos os testes |
+| `tests/test_pts.py`, `tests/test_formulario.py` | 16 testes novos |
+
+### Decisões
+
+- **P10 resolvida por uso:** a coluna `respostas` era a antecipação certa — é onde o
+  formulário dinâmico grava. Deixa de ser especulação e vira campo com consumidor.
+- **Versão da PT não é criada a cada edição de rascunho.** `pt_versao` guarda o retrato de
+  quando o documento circulou; versionar cada tecla no rascunho seria ruído. Nasce no L5.
+- **Sem `DELETE` de PT.** A trilha usa `RESTRICT` e o documento é registro legal; o que
+  existe é arquivar, no L5.
+- **Numeração pelo ano de emissão**, não da janela de validade: PT aberta em dezembro para
+  trabalho em janeiro pertence à numeração de dezembro.
+- **`nao_e_o_requisitante` responde 409, não 403.** É posse do rascunho, não perfil, e o
+  formato de conflito do projeto é a lista de pendências. A PT já está no escopo de quem pediu.
+- **Sem paginação na listagem** enquanto o volume é de uma unidade. Entra no L8, junto com a
+  busca estruturada.
+
+### Segurança
+
+- Escopo entra na consulta (`aplicar_escopo`), nunca peneira o resultado. Fora do escopo é
+  **404**, porque 403 já confirmaria que a PT existe.
+- `numero`, `uuid`, `estado`, `versao` e `requisitante_id` vêm do servidor; teste manda os
+  quatro no corpo e confirma que são ignorados.
+- Chaves estrangeiras vindas do payload (equipe, área, equipamento, modelo) são validadas no
+  serviço: `IntegrityError` no commit seria um 500 onde cabia uma pendência nomeando o campo.
+- Colisão de número tem retry com a UNIQUE como árbitro, em vez de 500 no meio da emissão.
+
 ### Pendências abertas
 
 | # | Pendência | Loop de destino |
@@ -161,13 +209,15 @@ credencial, e a migration nova sobe numa base que já tinha usuários.
 | ~~P7~~ | ~~Repositório sem remote~~ — publicado em TheAlphaOffshoreCode/aegis-pt, CI verde | resolvido em 05/08/2026 |
 | ~~P8~~ | ~~`security-review` sem linha de base~~ — destravada pelo commit inicial | resolvido em 05/08/2026 |
 | P9 | Skill `impeccable` aplicada às telas reais; o shell atual é diagnóstico | L11/L12 |
-| P10 | Coluna `permissao_trabalho.respostas` foi antecipação do formulário dinâmico, não está no `DATA_MODEL.md` original — confirmar no L3 ou remover | L3 |
+| ~~P10~~ | ~~Coluna `respostas` especulativa~~ — virou o campo onde o formulário dinâmico grava | resolvido no L3 |
 | P11 | `AuditEventRead`, `AlertaRead` e `AnexoCreate` existem sem consumidor até os loops que os usam | L6/L7/L11 |
 | ~~P12~~ | ~~`usuario` sem credencial~~ — `senha_hash`, `ultimo_acesso` e `unidade_id` criados | resolvido no L2 |
 | P13 | Compatibilidade com Python 3.11 só é provada no CI — esta máquina tem apenas 3.14 | contínuo |
 | P14 | Login sem limite de tentativas e sem bloqueio de conta; sem lista de revogação de token — token vazado vale até vencer | L13 |
 | P15 | Lotação é uma unidade só (`usuario.unidade_id`). Multi-unidade exigiria tabela associativa | quando aparecer o caso |
-| P16 | Evento de auditoria de login não é gravado: a cadeia de hash só nasce no L6 | L6 |
+| P16 | Evento de auditoria de login e de criação de PT não é gravado: a cadeia de hash só nasce no L6 | L6 |
+| P17 | `GET /pts` não pagina. Enquanto o escopo é uma unidade, cabe; entra com a busca estruturada | L8 |
+| P18 | Nenhuma regra de segurança ainda barra a emissão (certificação vencida, incompatibilidade de trabalhos simultâneos). O L3 valida forma, não risco | L4 |
 
 ### Ponto exato de retomada
 
@@ -175,14 +225,20 @@ L1 fechado e verificado: 20 testes passando, `alembic upgrade head` e `downgrade
 o seed roda duas vezes sem duplicar, `/health` continua 200. O clone do PC A precisou de `.venv`
 e `.env` próprios — nenhum dos dois vem do repositório.
 
-L2 fechado e verificado: 29 testes passando, `/auth/login` devolve token, `/auth/eu` responde
-401 sem credencial, e a migration de credencial subiu numa base que já tinha usuários semeados.
+L3 fechado e verificado: 49 testes passando, PT criada ponta a ponta no banco de
+desenvolvimento (`PT-2026-0001`, `RASCUNHO`) e formulário incompleto devolvendo 409 com um
+item por campo faltante.
 
-Próximo passo: **L3 — CRUD de PT e formulário dinâmico**. Ponto de partida: `exigir_perfis` e
-`unidades_visiveis` já existem em `app/security/dependencias.py` e precisam entrar na **query**
-de listagem de PT, não no resultado. A numeração da PT (`PT-AAAA-NNNN`) e o estado inicial são
-do servidor — `PermissaoTrabalhoCreate` já os recusa de propósito. Confirmar ou remover a coluna
-`respostas` (P10) enquanto nada depende dela.
+Próximo passo: **L4 — Motor de regras determinístico**. Ponto de partida: `app/rules/` já
+existe com `Pendencia`, `Severidade` e `ConflitoDeNegocio`, e `validar_respostas` é o modelo
+do formato — regra pura, sem banco, devolvendo pendências. O L4 acrescenta as regras de
+**risco**: certificação vencida bloqueia a liberação (o seed já tem a NR-35 de Rafael Souza
+vencida de propósito), trabalhos incompatíveis na mesma área, e segregação de funções — quem
+emite não aprova a própria PT (regra 8), validada no motor, não na interface.
+
+Cuidado ao ligar as regras: hoje `criar_pt` valida **forma**, não risco. Regra de risco que
+bloqueie a criação do rascunho impede o requisitante de até escrever a PT — o lugar delas é
+na transição de estado (L5), com o L4 fornecendo o veredito.
 
 Lembretes que já custaram caro: todo modelo novo entra em `app/models/__init__.py`, senão o
 autogenerate o ignora; toda coluna de enum passa por `enum_col()`; nenhuma constraint nasce sem

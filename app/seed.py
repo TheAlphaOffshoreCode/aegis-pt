@@ -12,8 +12,14 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import SessionLocal
-from app.models import Area, Certificacao, Equipamento, Unidade, Usuario
-from app.models.enums import Criticidade, PerfilUsuario, TipoCertificacao, TipoUnidade
+from app.models import Area, Certificacao, Equipamento, ModeloPT, Unidade, Usuario
+from app.models.enums import (
+    Criticidade,
+    PerfilUsuario,
+    TipoCertificacao,
+    TipoTrabalho,
+    TipoUnidade,
+)
 from app.security.credenciais import gerar_hash
 
 HOJE = date.today()
@@ -35,7 +41,7 @@ def _obter_ou_criar(db: Session, modelo: type, filtro: dict, **valores):
 
 
 def semear(db: Session) -> None:
-    """Cria 1 unidade, 3 áreas, 5 usuários, 2 equipamentos e 4 certificações."""
+    """Cria 1 unidade, 3 áreas, 5 usuários, 2 equipamentos, 4 certificações e 2 modelos."""
     # A guarda mora aqui, e não só em `main()`: quem importa `semear` também precisa esbarrar.
     if get_settings().environment != "development":
         raise RuntimeError("Seed é de desenvolvimento: ele cria contas com senha conhecida.")
@@ -103,10 +109,57 @@ def semear(db: Session) -> None:
         )
         for matricula, nome, email, empresa, cargo, perfil in pessoas
     }
+    # `_obter_ou_criar` só aplica valores na criação, então uma base semeada antes do L2 fica
+    # sem senha e sem lotação — logando ninguém e, quando loga, sem escopo para emitir PT.
     for usuario in usuarios.values():
-        # Base semeada antes do L2 não tem senha; sem isto ela ficaria impossível de usar.
         if not usuario.senha_hash:
             usuario.senha_hash = gerar_hash(SENHA_PADRAO)
+        if usuario.unidade_id is None:
+            usuario.unidade_id = unidade.id
+
+    _obter_ou_criar(
+        db,
+        ModeloPT,
+        {"tipo_trabalho": TipoTrabalho.TRABALHO_A_QUENTE, "versao": 1},
+        nome="PT de trabalho a quente",
+        campos=[
+            {"chave": "tipo_de_fogo", "rotulo": "Tipo de trabalho a quente", "tipo": "selecao",
+             "obrigatorio": True, "opcoes": ["solda", "corte", "esmerilhamento"]},
+            {"chave": "teste_de_gases_lie", "rotulo": "Teste de gases (% LIE)", "tipo": "numero",
+             "obrigatorio": True},
+            {"chave": "vigia_de_fogo", "rotulo": "Vigia de fogo designado", "tipo": "texto",
+             "obrigatorio": True},
+            {"chave": "area_isolada", "rotulo": "Área isolada e sinalizada", "tipo": "booleano",
+             "obrigatorio": True},
+            {"chave": "observacoes", "rotulo": "Observações", "tipo": "texto",
+             "obrigatorio": False},
+        ],
+        checklist=[
+            {"item": "Extintor posicionado a menos de 5 m da frente de serviço"},
+            {"item": "Drenos e aberturas vedados no raio de 15 m"},
+            {"item": "Detector de gás calibrado e com certificado válido"},
+        ],
+    )
+    _obter_ou_criar(
+        db,
+        ModeloPT,
+        {"tipo_trabalho": TipoTrabalho.TRABALHO_EM_ALTURA, "versao": 1},
+        nome="PT de trabalho em altura",
+        campos=[
+            {"chave": "altura_metros", "rotulo": "Altura do serviço (m)", "tipo": "numero",
+             "obrigatorio": True},
+            {"chave": "ancoragem", "rotulo": "Tipo de ancoragem", "tipo": "selecao",
+             "obrigatorio": True, "opcoes": ["linha_de_vida", "ponto_fixo", "andaime"]},
+            {"chave": "plano_de_resgate", "rotulo": "Plano de resgate definido",
+             "tipo": "booleano", "obrigatorio": True},
+            {"chave": "data_inspecao_cinto", "rotulo": "Data da inspeção do cinto",
+             "tipo": "data", "obrigatorio": True},
+        ],
+        checklist=[
+            {"item": "Cinto tipo paraquedista com talabarte duplo"},
+            {"item": "Área abaixo isolada contra queda de material"},
+        ],
+    )
 
     certificacoes = [
         # Rafael tem NR-34 em dia e a NR-35 **vencida** — é o caso que o L4 precisa barrar
@@ -137,7 +190,8 @@ def main() -> None:
     with SessionLocal() as db:
         semear(db)
     print(
-        "Seed aplicado: 1 unidade, 3 áreas, 5 usuários, 2 equipamentos, 4 certificações.\n"
+        "Seed aplicado: 1 unidade, 3 áreas, 5 usuários, 2 equipamentos, 4 certificações "
+        "e 2 modelos de PT.\n"
         f"Matrículas 10001 a 10005, senha '{SENHA_PADRAO}'."
     )
 
