@@ -68,6 +68,30 @@ The development seed refuses to run outside `environment=development`, and the g
 Segregation of duties (the issuer never signs their own permit) is enforced in the rule
 engine, not in the interface.
 
+## The rule engine (L4)
+
+Rule 2 lives here in full: **no safety-relevant number comes out of a language model.** Every
+deadline, count and expiry is computed in `app/rules/`, from tables in `exigencias.py` — required
+certification per work type, required attachments, maximum window length, incompatible
+simultaneous work. That file is deliberately data rather than logic, so changing a requirement
+does not mean editing control flow.
+
+The rules are **pure functions**: they receive the permit and the already-loaded concurrent
+permits and return pendencies. Nothing queries the database inside a rule, which is what lets
+each limit be tested on its own instead of through half the system.
+
+Two decisions worth stating because they are conservative on purpose:
+
+- **Certification is checked against the end of the permit's window, not against today.** A
+  certificate expiring mid-service leaves the worker unqualified exactly while exposed.
+- **Rule 8 (segregation of duties) is enforced in the engine.** The issuer cannot sign their own
+  permit in any approving role, and no one signs in a role their profile does not hold —
+  including `admin`, which administers the system and does not answer technically for the
+  document.
+
+`GET /pts/{id}/pendencias` exposes the verdict without changing anything. Enforcing it at the
+transition is L5: the engine decides, the state machine applies.
+
 ## Data integrity
 
 - Foreign keys are enforced on SQLite (`PRAGMA foreign_keys=ON` on every connection).

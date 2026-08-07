@@ -84,6 +84,21 @@ A permit outside the caller's scope answers `404`, not `403` — "you may not se
 already confirms it exists. `PATCH` only edits a permit still in `RASCUNHO`, and only by its
 requester; anything else is a state transition, which is L5.
 
+### `GET /pts/{id}/pendencias`
+
+The rule engine's verdict on a permit. **A query, not a decision** — it answers `200` even when
+the permit is unreleasable, because seeing what is missing is how the requester fixes it.
+
+```json
+{ "pt_id": 12, "numero": "PT-2026-0012", "liberavel": false,
+  "pendencias": [ { "codigo": "certificacao_vencida", "severidade": "bloqueante",
+                    "mensagem": "NR-35 de Rafael Souza vence em 23/06/2026, antes do fim da janela da PT",
+                    "campo": "equipe", "responsavel": "requisitante" } ] }
+```
+
+`liberavel` is false whenever any pendency is `bloqueante`; `atencao` informs without blocking.
+Enforcement of this verdict at the transition is L5 — this endpoint never changes state.
+
 ## Business conflicts
 
 Every blocking pendency returns `409` with the structured list, produced by a single handler
@@ -95,10 +110,15 @@ so no route invents its own shape:
                 "campo": "vigia_de_fogo", "responsavel": null } ] }
 ```
 
-Codes so far: `campo_obrigatorio`, `tipo_invalido`, `opcao_invalida`, `campo_desconhecido`,
-`modelo_invalido`, `modelo_incompativel`, `area_invalida`, `equipamento_invalido`,
-`membro_invalido`, `fora_do_escopo`, `pt_nao_editavel`, `nao_e_o_requisitante`,
-`numero_em_disputa`.
+Codes so far. Form and structure (L3): `campo_obrigatorio`, `tipo_invalido`, `opcao_invalida`,
+`campo_desconhecido`, `modelo_invalido`, `modelo_incompativel`, `area_invalida`,
+`equipamento_invalido`, `membro_invalido`, `fora_do_escopo`, `pt_nao_editavel`,
+`nao_e_o_requisitante`, `numero_em_disputa`.
+
+Risk (L4): `janela_vencida`, `janela_excede_o_maximo`, `janela_menor_que_a_duracao`,
+`equipe_vazia`, `certificacao_ausente`, `certificacao_vencida`, `certificacao_a_vencer`,
+`documento_ausente`, `documento_vencido`, `trabalhos_incompativeis`, `segregacao_de_funcoes`,
+`papel_incompativel_com_o_perfil`, `assinante_inativo`.
 
 `422` remains what it always was: the payload did not even parse. `409` means it parsed and
 the business refused it.

@@ -130,6 +130,13 @@ Deviations: `SUSPENSA` (only from `EM_EXECUCAO`) and `REJEITADA` (returns to `RA
 - **Foreign keys coming from the payload get validated in the service**, not left to the
   database. An `IntegrityError` at commit is a `500` where a pendency naming the field was
   possible.
+- **Every datetime column uses `UTCDateTime`, never bare `DateTime(timezone=True)`.** SQLite
+  stores no offset, so a plain column returns naive there and aware from PostgreSQL. Comparing
+  the value read against `agora_utc()` then raises `TypeError` in one environment and passes in
+  the other. Normalizing at the database edge fixes it for every consumer at once.
+- **Rules in `app/rules/` take data and return pendencies — they never query.** The service
+  loads what a rule needs (concurrent permits, for instance) and passes it in. That is what
+  keeps each limit testable without building half the system around it.
 
 ## Conventions
 

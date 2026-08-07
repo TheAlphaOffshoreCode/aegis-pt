@@ -3,13 +3,13 @@
 from datetime import date, datetime
 from uuid import uuid4
 
-from sqlalchemy import JSON, Date, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Date, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 from app.models.enums import EstadoPT, PapelAssinatura, TipoAnexo, TipoTrabalho
 from app.models.pessoa import Usuario
-from app.models.tipos import TimestampMixin, agora_utc, enum_col
+from app.models.tipos import TimestampMixin, UTCDateTime, agora_utc, enum_col
 
 
 class ModeloPT(TimestampMixin, Base):
@@ -60,8 +60,8 @@ class PermissaoTrabalho(TimestampMixin, Base):
     )
 
     descricao: Mapped[str] = mapped_column(Text, nullable=False)
-    valida_de: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    valida_ate: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True, nullable=False)
+    valida_de: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
+    valida_ate: Mapped[datetime] = mapped_column(UTCDateTime, index=True, nullable=False)
     perigos: Mapped[list[dict]] = mapped_column(JSON, default=list, nullable=False)
     controles: Mapped[list[dict]] = mapped_column(JSON, default=list, nullable=False)
     respostas: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
@@ -113,7 +113,7 @@ class PTVersao(Base):
     autor_id: Mapped[int] = mapped_column(ForeignKey("usuario.id"), nullable=False)
     motivo: Mapped[str] = mapped_column(Text, nullable=False)
     criado_em: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=agora_utc, nullable=False
+        UTCDateTime, default=agora_utc, nullable=False
     )
 
     pt: Mapped[PermissaoTrabalho] = relationship(back_populates="versoes")
@@ -135,7 +135,7 @@ class Anexo(Base):
     valido_ate: Mapped[date | None] = mapped_column(Date)
     enviado_por_id: Mapped[int] = mapped_column(ForeignKey("usuario.id"), nullable=False)
     criado_em: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=agora_utc, nullable=False
+        UTCDateTime, default=agora_utc, nullable=False
     )
 
     pt: Mapped[PermissaoTrabalho] = relationship(back_populates="anexos")
@@ -162,7 +162,7 @@ class Assinatura(Base):
     versao_pt: Mapped[int] = mapped_column(nullable=False)
     hash_documento: Mapped[str] = mapped_column(String(64), nullable=False)
     assinado_em: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=agora_utc, nullable=False
+        UTCDateTime, default=agora_utc, nullable=False
     )
 
     pt: Mapped[PermissaoTrabalho] = relationship(back_populates="assinaturas")

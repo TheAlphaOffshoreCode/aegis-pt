@@ -133,6 +133,25 @@ class AnexoRead(ORMSchema):
     criado_em: datetime
 
 
+class PendenciaRead(BaseModel):
+    """Veredito do motor de regras. `codigo` e `campo` são o que a tela usa para marcar o erro."""
+
+    codigo: str
+    severidade: str
+    mensagem: str
+    campo: str | None
+    responsavel: str | None
+
+
+class AvaliacaoRead(BaseModel):
+    """Resultado da avaliação. `liberavel` é conclusão do motor, nunca opinião de modelo."""
+
+    pt_id: int
+    numero: str
+    liberavel: bool
+    pendencias: list[PendenciaRead]
+
+
 class AssinaturaRead(ORMSchema):
     id: int
     pt_id: int

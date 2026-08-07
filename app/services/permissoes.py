@@ -16,8 +16,10 @@ from app.models.organizacao import Area, Equipamento
 from app.models.permissao import ModeloPT, PermissaoTrabalho, PTEquipe
 from app.models.pessoa import Usuario
 from app.models.tipos import agora_utc
+from app.rules.exigencias import ESTADOS_QUE_OCUPAM_A_AREA
 from app.rules.formulario import validar_respostas
-from app.rules.pendencias import ConflitoDeNegocio, Pendencia, Severidade, bloqueiam
+from app.rules.motor import avaliar_pt
+from app.rules.pendencias import ConflitoDeNegocio, Pendencia, bloqueiam, bloqueio
 from app.schemas.permissao import PermissaoTrabalhoCreate, PermissaoTrabalhoUpdate
 from app.security.dependencias import unidades_visiveis
 
@@ -26,12 +28,6 @@ PERFIS_QUE_EMITEM = (
     PerfilUsuario.AREA_RESPONSAVEL,
     PerfilUsuario.COORDENADOR,
 )
-
-
-def _bloqueio(codigo: str, mensagem: str, campo: str | None = None) -> Pendencia:
-    return Pendencia(
-        codigo=codigo, severidade=Severidade.BLOQUEANTE, mensagem=mensagem, campo=campo
-    )
 
 
 def aplicar_escopo(consulta: Select, usuario: Usuario) -> Select:
@@ -65,7 +61,7 @@ def _validar_lotacao(pt_unidade_id: int, usuario: Usuario) -> list[Pendencia]:
     unidades = unidades_visiveis(usuario)
     if unidades is not None and pt_unidade_id not in unidades:
         return [
-            _bloqueio(
+            bloqueio(
                 "fora_do_escopo",
                 "A unidade informada está fora da lotação do usuário",
                 campo="unidade_id",
@@ -83,31 +79,31 @@ def _validar_estrutura(
     modelo = db.get(ModeloPT, dados.modelo_pt_id) if dados.modelo_pt_id else None
     if modelo is None or not modelo.ativo:
         pendencias.append(
-            _bloqueio("modelo_invalido", "Modelo de PT inexistente ou inativo", "modelo_pt_id")
+            bloqueio("modelo_invalido", "Modelo de PT inexistente ou inativo", campo="modelo_pt_id")
         )
     elif modelo.tipo_trabalho != dados.tipo_trabalho:
         pendencias.append(
-            _bloqueio(
+            bloqueio(
                 "modelo_incompativel",
                 f"O modelo é de {modelo.tipo_trabalho}, não de {dados.tipo_trabalho}",
-                "modelo_pt_id",
+                campo="modelo_pt_id",
             )
         )
 
     area = db.get(Area, dados.area_id)
     if area is None or area.unidade_id != unidade_id:
         pendencias.append(
-            _bloqueio("area_invalida", "A área não pertence à unidade informada", "area_id")
+            bloqueio("area_invalida", "A área não pertence à unidade informada", campo="area_id")
         )
 
     if dados.equipamento_id is not None:
         equipamento = db.get(Equipamento, dados.equipamento_id)
         if equipamento is None or equipamento.area_id != dados.area_id:
             pendencias.append(
-                _bloqueio(
+                bloqueio(
                     "equipamento_invalido",
                     "O equipamento não pertence à área informada",
-                    "equipamento_id",
+                    campo="equipamento_id",
                 )
             )
 
@@ -125,7 +121,7 @@ def _validar_equipe(db: Session, equipe: Sequence) -> list[Pendencia]:
         usuario = db.get(Usuario, membro.usuario_id)
         if usuario is None or not usuario.ativo:
             pendencias.append(
-                _bloqueio(
+                bloqueio(
                     "membro_invalido",
                     f"Usuário {membro.usuario_id} não existe ou está inativo",
                     campo="equipe",
@@ -192,7 +188,7 @@ def criar_pt(
         return pt
 
     raise ConflitoDeNegocio(
-        [_bloqueio("numero_em_disputa", "Não foi possível reservar o número da PT; tente de novo")]
+        [bloqueio("numero_em_disputa", "Não foi possível reservar o número da PT; tente de novo")]
     )
 
 
@@ -217,6 +213,27 @@ def listar_pts(
     return db.scalars(consulta.order_by(PermissaoTrabalho.id.desc())).all()
 
 
+def concorrentes_na_area(db: Session, pt: PermissaoTrabalho) -> Sequence[PermissaoTrabalho]:
+    """PTs que ocupam a mesma área com janela sobreposta.
+
+    Sobreposição é `inicio_de_uma < fim_da_outra` nos dois sentidos; comparar só os inícios
+    deixa passar a PT que começou antes e ainda não terminou.
+    """
+    consulta = select(PermissaoTrabalho).where(
+        PermissaoTrabalho.id != pt.id,
+        PermissaoTrabalho.area_id == pt.area_id,
+        PermissaoTrabalho.estado.in_(ESTADOS_QUE_OCUPAM_A_AREA),
+        PermissaoTrabalho.valida_de < pt.valida_ate,
+        PermissaoTrabalho.valida_ate > pt.valida_de,
+    )
+    return db.scalars(consulta).all()
+
+
+def pendencias_da_pt(db: Session, pt: PermissaoTrabalho) -> list[Pendencia]:
+    """Roda o motor de regras contra a PT. Só avalia — não decide nada e não grava nada."""
+    return avaliar_pt(pt, concorrentes_na_area(db, pt), agora_utc())
+
+
 def obter_pt(db: Session, pt_id: int, usuario: Usuario) -> PermissaoTrabalho | None:
     """PT dentro do escopo do usuário. Fora do escopo devolve `None`, e o router responde 404.
 
@@ -233,7 +250,7 @@ def atualizar_pt(
     if pt.estado != EstadoPT.RASCUNHO:
         raise ConflitoDeNegocio(
             [
-                _bloqueio(
+                bloqueio(
                     "pt_nao_editavel",
                     f"PT em {pt.estado} não é editável; use uma transição de estado",
                 )
@@ -241,7 +258,7 @@ def atualizar_pt(
         )
     if autor.perfil != PerfilUsuario.ADMIN and pt.requisitante_id != autor.id:
         raise ConflitoDeNegocio(
-            [_bloqueio("nao_e_o_requisitante", "Só o requisitante pode corrigir o rascunho")]
+            [bloqueio("nao_e_o_requisitante", "Só o requisitante pode corrigir o rascunho")]
         )
 
     pendencias, modelo = _validar_estrutura(db, dados, pt.unidade_id)

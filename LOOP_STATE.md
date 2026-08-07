@@ -8,8 +8,8 @@ Fonte de verdade para retomar o trabalho. Atualizado ao fim de cada loop.
 | L1 | Modelo de dados e migrations | ✅ concluído | 2026-08-07 |
 | L2 | Autenticação e RBAC | ✅ concluído | 2026-08-07 |
 | L3 | CRUD de PT e formulário dinâmico | ✅ concluído | 2026-08-07 |
-| L4 | Motor de regras determinístico | ⏳ aguardando autorização | — |
-| L5 | Máquina de estados e fluxo de aprovação | — | — |
+| L4 | Motor de regras determinístico | ✅ concluído | 2026-08-07 |
+| L5 | Máquina de estados e fluxo de aprovação | ⏳ aguardando autorização | — |
 | L6 | Trilha de auditoria imutável | — | — |
 | L7 | Anexos, validade e OCR | — | — |
 | L8 | Busca estruturada e dossiê | — | — |
@@ -196,6 +196,51 @@ escopo aplicado na consulta e o padrão de conflito `409` com pendência estrutu
   serviço: `IntegrityError` no commit seria um 500 onde cabia uma pendência nomeando o campo.
 - Colisão de número tem retry com a UNIQUE como árbitro, em vez de 500 no meio da emissão.
 
+---
+
+## L4 — Motor de regras determinístico (2026-08-07)
+
+**Entregue:** as regras de risco da PT, puras e testáveis isoladamente, com `GET
+/pts/{id}/pendencias` expondo o veredito sem decidir nada.
+**Aceite:** 72 testes passando (19 do motor rodam em 0,06 s, por não tocarem no banco); a PT do
+banco de desenvolvimento é reprovada com três bloqueios corretos e um responsável em cada.
+
+### Arquivos tocados
+
+| Arquivo | Papel |
+|---|---|
+| `app/rules/exigencias.py` | as tabelas: certificação, anexos, duração máxima, incompatibilidades |
+| `app/rules/motor.py` | janela, certificações, documentos, simultaneidade, segregação de funções |
+| `app/rules/pendencias.py` | `bloqueio()` e `aviso()` consolidados, antes duplicados em três lugares |
+| `app/services/permissoes.py` | `concorrentes_na_area`, `pendencias_da_pt` |
+| `app/routers/pts.py` | `GET /pts/{id}/pendencias` |
+| `app/models/tipos.py` | **`UTCDateTime`** — normaliza fuso na borda do banco |
+| `tests/test_motor.py` | 19 testes puros |
+
+### Decisões
+
+- **`exigencias.py` é dado, não lógica.** Mudar uma exigência normativa não deveria significar
+  editar fluxo de controle — e é o arquivo que alguém de segurança consegue revisar.
+- **Regra pura, sem banco.** Quem consulta é o serviço; a regra recebe e devolve. É o que
+  permite testar cada limite sozinho em vez de montar meio sistema por caso.
+- **Certificação é conferida contra o fim da janela, não contra hoje.** Certificado que vence
+  no meio do serviço deixa o trabalhador sem habilitação exatamente enquanto está exposto.
+- **Ausência na tabela significa "nada a exigir"**, e está escrito lá — içamento não tem
+  habilitação individual entre as cinco normas cadastradas.
+- **`admin` não assina** em papel técnico: administra o sistema, não responde pelo documento.
+- O endpoint responde **200 com `liberavel: false`**. É consulta; quem impede a transição é o L5.
+
+### Defeito encontrado e corrigido: fuso na borda do banco
+
+`pt.valida_ate <= agora` levantou `TypeError` no primeiro teste de integração. Causa: o SQLite
+**não armazena offset**, então `DateTime(timezone=True)` devolve datetime *naive* dele e *aware*
+do PostgreSQL. O mesmo código passaria em produção e quebraria em desenvolvimento.
+
+Corrigido na raiz com o `TypeDecorator` `UTCDateTime`, aplicado a todas as colunas de data, em
+vez de converter dentro do motor — remendo no motor deixaria o próximo comparador repetindo o
+bug. O teste de migration confirmou que o tipo não altera o esquema, e há teste novo provando
+que a data volta do banco com fuso.
+
 ### Pendências abertas
 
 | # | Pendência | Loop de destino |
@@ -217,7 +262,11 @@ escopo aplicado na consulta e o padrão de conflito `409` com pendência estrutu
 | P15 | Lotação é uma unidade só (`usuario.unidade_id`). Multi-unidade exigiria tabela associativa | quando aparecer o caso |
 | P16 | Evento de auditoria de login e de criação de PT não é gravado: a cadeia de hash só nasce no L6 | L6 |
 | P17 | `GET /pts` não pagina. Enquanto o escopo é uma unidade, cabe; entra com a busca estruturada | L8 |
-| P18 | Nenhuma regra de segurança ainda barra a emissão (certificação vencida, incompatibilidade de trabalhos simultâneos). O L3 valida forma, não risco | L4 |
+| ~~P18~~ | ~~Nenhuma regra de risco~~ — motor determinístico entregue e exposto em `/pts/{id}/pendencias` | resolvido no L4 |
+| P19 | O veredito do motor ainda não **impede** nada: falta a máquina de estados aplicá-lo | L5 |
+| P20 | `documentos_obrigatorios` sempre acusa ausência enquanto o upload não existe. Correto, mas só deixa de ser ruído com o L7 | L7 |
+| P21 | Duração máxima e pares incompatíveis são constantes em `exigencias.py`. Se a operação quiser ajustar sem deploy, viram configuração | quando pedirem |
+| P22 | API aceita datetime sem fuso e o trata como UTC. Exigir offset explícito é decisão do contrato HTTP | L12/L13 |
 
 ### Ponto exato de retomada
 
@@ -225,20 +274,23 @@ L1 fechado e verificado: 20 testes passando, `alembic upgrade head` e `downgrade
 o seed roda duas vezes sem duplicar, `/health` continua 200. O clone do PC A precisou de `.venv`
 e `.env` próprios — nenhum dos dois vem do repositório.
 
-L3 fechado e verificado: 49 testes passando, PT criada ponta a ponta no banco de
-desenvolvimento (`PT-2026-0001`, `RASCUNHO`) e formulário incompleto devolvendo 409 com um
-item por campo faltante.
+L4 fechado e verificado: 72 testes passando, motor rodando contra o banco de desenvolvimento e
+reprovando a PT existente com três bloqueios corretos, cada um com responsável.
 
-Próximo passo: **L4 — Motor de regras determinístico**. Ponto de partida: `app/rules/` já
-existe com `Pendencia`, `Severidade` e `ConflitoDeNegocio`, e `validar_respostas` é o modelo
-do formato — regra pura, sem banco, devolvendo pendências. O L4 acrescenta as regras de
-**risco**: certificação vencida bloqueia a liberação (o seed já tem a NR-35 de Rafael Souza
-vencida de propósito), trabalhos incompatíveis na mesma área, e segregação de funções — quem
-emite não aprova a própria PT (regra 8), validada no motor, não na interface.
+Próximo passo: **L5 — Máquina de estados e fluxo de aprovação**. Tudo o que ele precisa já
+existe e está testado:
 
-Cuidado ao ligar as regras: hoje `criar_pt` valida **forma**, não risco. Regra de risco que
-bloqueie a criação do rascunho impede o requisitante de até escrever a PT — o lugar delas é
-na transição de estado (L5), com o L4 fornecendo o veredito.
+- `avaliar_pt(pt, concorrentes, agora)` dá o veredito; `bloqueiam(...)` diz se impede.
+  `pendencias_da_pt(db, pt)` já monta a chamada — a transição só precisa recusar quando houver
+  bloqueante, levantando `ConflitoDeNegocio`, que o handler converte em 409.
+- `validar_assinatura(pt, usuario, papel)` implementa a regra 8 e a correspondência
+  papel/perfil. Falta o L5 gravar a `Assinatura` (unique por pt+papel+versão já existe).
+- `PTVersao` espera o snapshot: a versão nasce quando a PT sai de `RASCUNHO`, e cada revisão
+  invalida as assinaturas da versão anterior.
+
+Nenhuma transição pode ser pulada (regra 6), e cada uma exige ator, momento, contexto e hash do
+documento — o registro em `audit_event` é do L6, mas a transição precisa nascer já carregando
+esses dados, senão o L6 audita um passado que não foi guardado.
 
 Lembretes que já custaram caro: todo modelo novo entra em `app/models/__init__.py`, senão o
 autogenerate o ignora; toda coluna de enum passa por `enum_col()`; nenhuma constraint nasce sem

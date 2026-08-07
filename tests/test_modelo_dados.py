@@ -108,6 +108,23 @@ def test_pt_nasce_em_rascunho_com_uuid_proprio(db: Session) -> None:
     assert len(pt.uuid) == 36
 
 
+def test_datetime_volta_do_banco_com_fuso(db: Session) -> None:
+    """O SQLite não guarda offset: sem `UTCDateTime` a data lida vem naive.
+
+    Comparar uma dessas com `agora_utc()` levanta `TypeError` — e só no banco de
+    desenvolvimento, porque o PostgreSQL devolveria o valor com fuso.
+    """
+    pt = _pt_minima(db)
+    db.commit()
+    db.expire_all()
+
+    lida = db.get(PermissaoTrabalho, pt.id)
+
+    assert lida.valida_de.tzinfo is not None
+    assert lida.criado_em.tzinfo is not None
+    assert lida.valida_ate > agora_utc()  # a comparação em si é o que quebrava
+
+
 def test_foreign_key_invalida_e_rejeitada(db: Session) -> None:
     """Sem `PRAGMA foreign_keys=ON` isto passaria calado e o modelo estaria mentindo."""
     db.add(Area(unidade_id=9999, nome="Área órfã", codigo="XX"))

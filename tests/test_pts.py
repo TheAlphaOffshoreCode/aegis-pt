@@ -274,5 +274,87 @@ def test_equipe_valida_e_gravada_junto_com_a_pt(
     assert [(m.usuario_id, m.funcao) for m in equipe] == [(executante.id, "Soldador")]
 
 
+def test_pendencias_reprovam_pt_sem_certificacao_nem_documento(
+    client: TestClient, cenario: dict, criar_usuario: Callable[..., Usuario],
+    autenticar: Callable[[str], dict[str, str]],
+) -> None:
+    """O endpoint é consulta: responde 200 mesmo cheio de pendência bloqueante."""
+    criar_usuario(matricula="70001", unidade_id=cenario["alfa"].id)
+    executante = criar_usuario(
+        matricula="70002", perfil=PerfilUsuario.EXECUTANTE, unidade_id=cenario["alfa"].id
+    )
+    cabecalho = autenticar("70001")
+    pt = client.post(
+        "/pts",
+        json=_payload(cenario, equipe=[{"usuario_id": executante.id, "funcao": "Montador"}]),
+        headers=cabecalho,
+    ).json()
+
+    avaliacao = client.get(f"/pts/{pt['id']}/pendencias", headers=cabecalho)
+
+    assert avaliacao.status_code == 200
+    corpo = avaliacao.json()
+    assert corpo["liberavel"] is False
+    codigos = {p["codigo"] for p in corpo["pendencias"]}
+    assert "certificacao_ausente" in codigos  # trabalho em altura exige NR-35
+    assert "documento_ausente" in codigos  # e APR mais ASO
+
+
+def test_pendencia_de_simultaneidade_depende_da_sobreposicao_real_da_janela(
+    client: TestClient, db: Session, cenario: dict,
+    criar_usuario: Callable[..., Usuario], autenticar: Callable[[str], dict[str, str]],
+) -> None:
+    """A PT vizinha começou antes e ainda não terminou — comparar só os inícios a deixaria passar."""
+    criar_usuario(matricula="70001", unidade_id=cenario["alfa"].id)
+    cabecalho = autenticar("70001")
+    pt = client.post("/pts", json=_payload(cenario), headers=cabecalho).json()
+    alvo = db.get(PermissaoTrabalho, pt["id"])
+
+    vizinha = PermissaoTrabalho(
+        numero="PT-2026-9999",
+        tipo_trabalho=TipoTrabalho.TRABALHO_A_QUENTE,
+        estado=EstadoPT.EM_EXECUCAO,
+        modelo_pt_id=cenario["modelo_quente"].id,
+        unidade_id=cenario["alfa"].id,
+        area_id=cenario["area_alfa"].id,
+        requisitante_id=alvo.requisitante_id,
+        descricao="Solda iniciada antes",
+        valida_de=alvo.valida_de - timedelta(hours=2),
+        valida_ate=alvo.valida_de + timedelta(hours=1),
+    )
+    db.add(vizinha)
+    db.commit()
+
+    codigos = {
+        p["codigo"]
+        for p in client.get(f"/pts/{pt['id']}/pendencias", headers=cabecalho).json()["pendencias"]
+    }
+    assert "trabalhos_incompativeis" in codigos
+
+    # Afastada no tempo, a mesma vizinha deixa de conflitar.
+    vizinha.valida_de = alvo.valida_ate + timedelta(hours=1)
+    vizinha.valida_ate = alvo.valida_ate + timedelta(hours=5)
+    db.commit()
+
+    codigos = {
+        p["codigo"]
+        for p in client.get(f"/pts/{pt['id']}/pendencias", headers=cabecalho).json()["pendencias"]
+    }
+    assert "trabalhos_incompativeis" not in codigos
+
+
+def test_pendencias_de_pt_fora_do_escopo_respondem_404(
+    client: TestClient, cenario: dict, criar_usuario: Callable[..., Usuario],
+    autenticar: Callable[[str], dict[str, str]],
+) -> None:
+    criar_usuario(matricula="70001", unidade_id=cenario["alfa"].id)
+    criar_usuario(matricula="70002", unidade_id=cenario["beta"].id)
+    pt = client.post("/pts", json=_payload(cenario), headers=autenticar("70001")).json()
+
+    resposta = client.get(f"/pts/{pt['id']}/pendencias", headers=autenticar("70002"))
+
+    assert resposta.status_code == 404
+
+
 def test_listar_sem_autenticacao_e_recusado(client: TestClient) -> None:
     assert client.get("/pts").status_code == 401

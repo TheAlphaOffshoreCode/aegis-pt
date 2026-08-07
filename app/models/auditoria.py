@@ -2,12 +2,12 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 from app.models.enums import EstadoPT, PerfilUsuario, StatusAlerta
-from app.models.tipos import TimestampMixin, agora_utc, enum_col
+from app.models.tipos import TimestampMixin, UTCDateTime, agora_utc, enum_col
 
 
 class AuditEvent(Base):
@@ -33,7 +33,7 @@ class AuditEvent(Base):
     motivo: Mapped[str | None] = mapped_column(Text)
 
     ocorrido_em: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=agora_utc, index=True, nullable=False
+        UTCDateTime, default=agora_utc, index=True, nullable=False
     )
     dispositivo: Mapped[str | None] = mapped_column(String(120))
     ip: Mapped[str | None] = mapped_column(String(45))
@@ -58,7 +58,7 @@ class Alerta(TimestampMixin, Base):
     tipo: Mapped[str] = mapped_column(String(60), index=True, nullable=False)
     entidade: Mapped[str] = mapped_column(String(40), nullable=False)
     entidade_id: Mapped[int] = mapped_column(nullable=False)
-    prazo: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    prazo: Mapped[datetime | None] = mapped_column(UTCDateTime, index=True)
     nivel_escalonamento: Mapped[int] = mapped_column(default=0, nullable=False)
     status: Mapped[StatusAlerta] = mapped_column(
         enum_col(StatusAlerta), default=StatusAlerta.ABERTO, index=True, nullable=False

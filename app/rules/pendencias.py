@@ -28,6 +28,28 @@ class Pendencia:
         return asdict(self)
 
 
+def bloqueio(
+    codigo: str,
+    mensagem: str,
+    *,
+    campo: str | None = None,
+    responsavel: PerfilUsuario | None = None,
+) -> Pendencia:
+    """Pendência que impede a PT de seguir."""
+    return Pendencia(codigo, Severidade.BLOQUEANTE, mensagem, campo, responsavel)
+
+
+def aviso(
+    codigo: str,
+    mensagem: str,
+    *,
+    campo: str | None = None,
+    responsavel: PerfilUsuario | None = None,
+) -> Pendencia:
+    """Pendência que informa sem impedir."""
+    return Pendencia(codigo, Severidade.ATENCAO, mensagem, campo, responsavel)
+
+
 def bloqueiam(pendencias: list[Pendencia]) -> list[Pendencia]:
     """Só as bloqueantes. Pendência de atenção informa, não impede."""
     return [p for p in pendencias if p.severidade == Severidade.BLOQUEANTE]

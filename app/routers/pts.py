@@ -10,7 +10,9 @@ from app.database import get_db
 from app.models.enums import EstadoPT, TipoTrabalho
 from app.models.permissao import ModeloPT, PermissaoTrabalho
 from app.models.pessoa import Usuario
+from app.rules.pendencias import bloqueiam
 from app.schemas.permissao import (
+    AvaliacaoRead,
     ModeloPTRead,
     PermissaoTrabalhoCreate,
     PermissaoTrabalhoRead,
@@ -85,6 +87,27 @@ def atualizar(
 ) -> PermissaoTrabalho:
     """Corrige um rascunho. Fora de `RASCUNHO` a mudança é transição, e transição é do L5."""
     return permissoes.atualizar_pt(db, _pt_no_escopo(db, pt_id, autor), dados, autor)
+
+
+@router.get("/{pt_id}/pendencias", response_model=AvaliacaoRead)
+def pendencias(
+    pt_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(usuario_atual),
+) -> AvaliacaoRead:
+    """O que impede esta PT de ser liberada, segundo o motor de regras.
+
+    Consulta, não decisão: responde 200 mesmo cheia de pendência. Quem impede a transição é o
+    L5, usando este mesmo veredito.
+    """
+    pt = _pt_no_escopo(db, pt_id, usuario)
+    encontradas = permissoes.pendencias_da_pt(db, pt)
+    return AvaliacaoRead(
+        pt_id=pt.id,
+        numero=pt.numero,
+        liberavel=not bloqueiam(encontradas),
+        pendencias=[p.como_dict() for p in encontradas],
+    )
 
 
 def _pt_no_escopo(db: Session, pt_id: int, usuario: Usuario) -> PermissaoTrabalho:
