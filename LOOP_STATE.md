@@ -10,8 +10,8 @@ Fonte de verdade para retomar o trabalho. Atualizado ao fim de cada loop.
 | L3 | CRUD de PT e formulário dinâmico | ✅ concluído | 2026-08-07 |
 | L4 | Motor de regras determinístico | ✅ concluído | 2026-08-07 |
 | L5 | Máquina de estados e fluxo de aprovação | ✅ concluído | 2026-08-07 |
-| L6 | Trilha de auditoria imutável | ⏳ aguardando autorização | — |
-| L7 | Anexos, validade e OCR | — | — |
+| L6 | Trilha de auditoria imutável | ✅ concluído | 2026-08-07 |
+| L7 | Anexos, validade e OCR | ⏳ aguardando autorização | — |
 | L8 | Busca estruturada e dossiê | — | — |
 | L9 | IA: busca em linguagem natural | — | — |
 | L10 | IA: geração de rascunho | — | — |
@@ -290,6 +290,51 @@ documento já assinado, e chutar uma seria falsificar registro. A coluna entra n
 `NOT NULL` no passo seguinte — se houver assinatura anterior ao fluxo, falha alto. Nenhuma pode
 existir, porque até o L5 não havia como assinar.
 
+---
+
+## L6 — Trilha de auditoria imutável (2026-08-07)
+
+**Entregue:** verificador de integridade, guarda de append-only no ORM, API de consulta da
+trilha, evento compensatório e versionamento do formato do payload.
+**Aceite:** 104 testes passando. No banco de desenvolvimento, a cadeia da `PT-2026-0002` fecha,
+acusa exatamente um evento ao ser adulterada por SQL direto, e volta a fechar quando o valor é
+restaurado — a guarda provada nos dois sentidos.
+
+### Arquivos tocados
+
+| Arquivo | Papel |
+|---|---|
+| `app/audit/verificador.py` | recalcula elo a elo e aponta onde a cadeia não fecha |
+| `app/audit/formato.py` | `VERSAO_PAYLOAD` — contrato congelado do que entra no hash |
+| `app/audit/trilha.py` | `montar_payload` versionado, usado pela escrita e pela conferência |
+| `app/models/auditoria.py` | `versao_payload` e o listener que recusa `UPDATE`/`DELETE` |
+| `app/services/auditoria.py` | consulta, conferência e compensação |
+| `app/routers/pts.py` | `GET /pts/{id}/trilha` e `POST .../compensacao` |
+| `app/services/permissoes.py` | eventos de criação e edição da PT |
+| `migrations/versions/66f40a59708d_*.py` | coluna `versao_payload` |
+| `tests/test_auditoria.py` | 14 testes |
+
+### Decisões
+
+- **Append-only virou garantia executável.** Listener `before_flush` na `SessionLocal` —
+  não na classe `Session`, que é a armadilha já paga no L0 com o `PRAGMA foreign_keys`.
+- **Duas conferências por elo**, porque falham por motivos diferentes: `hash_anterior` errado
+  denuncia evento removido ou reordenado; `hash_evento` errado denuncia evento alterado.
+- **A trilha começa no nascimento da PT**, não na primeira transição.
+- **Compensação não se compensa**: registre um evento novo.
+
+### O defeito que só o smoke pegou
+
+Ao acrescentar `evento_compensado_id` ao payload, **todos os eventos gravados no L5 passaram a
+acusar adulteração** — o verificador recalculava por um formato que não era o da selagem. Os
+testes não viram, porque criam tudo do zero com o código novo; só a base que atravessou dois
+loops tinha o estado antigo.
+
+Pelo critério escrito no próprio módulo — "um verificador que dá alarme falso é pior que
+nenhum" — isso não podia ficar documentado como limitação. Cada evento passou a guardar a
+`versao_payload` com que nasceu, e o formato virou contrato: acrescentar campo exige subir a
+versão e manter o formato anterior montável. Coberto por dois testes.
+
 ### Pendências abertas
 
 | # | Pendência | Loop de destino |
@@ -309,12 +354,14 @@ existir, porque até o L5 não havia como assinar.
 | P13 | Compatibilidade com Python 3.11 só é provada no CI — esta máquina tem apenas 3.14 | contínuo |
 | P14 | Login sem limite de tentativas e sem bloqueio de conta; sem lista de revogação de token — token vazado vale até vencer | L13 |
 | P15 | Lotação é uma unidade só (`usuario.unidade_id`). Multi-unidade exigiria tabela associativa | quando aparecer o caso |
-| P16 | Evento de auditoria de login e de criação de PT não é gravado: a cadeia de hash só nasce no L6 | L6 |
+| P16 | Criação e edição de PT já entram na trilha. Falta o evento de **login**, que não tem PT e por isso fica fora da cadeia por PT — decidir se ganha trilha própria | L13 |
+| P26 | A cadeia é por PT. Não há cadeia global, então um evento sem PT (login) não tem onde encadear | L13 |
+| P27 | O verificador percorre a cadeia inteira a cada consulta. Com trilha longa isso vira leitura completa por chamada | L11 |
 | P17 | `GET /pts` não pagina. Enquanto o escopo é uma unidade, cabe; entra com a busca estruturada | L8 |
 | ~~P18~~ | ~~Nenhuma regra de risco~~ — motor determinístico entregue e exposto em `/pts/{id}/pendencias` | resolvido no L4 |
 | ~~P19~~ | ~~Veredito do motor não impede nada~~ — entrada em `EM_EXECUCAO` exige risco limpo | resolvido no L5 |
 | P23 | Retomada de PT suspensa não gera assinatura, só evento de trilha. Se a operação exigir assinatura formal, é índice parcial ou tabela de eventos assinados | quando pedirem |
-| P24 | Não há verificador da cadeia de hash nem API de consulta da trilha; o evento compensatório também não existe | L6 |
+| ~~P24~~ | ~~Sem verificador, API de trilha e compensação~~ — os três entregues | resolvido no L6 |
 | P25 | `PTVersao` é gravada mas não exposta: falta endpoint de histórico e diff | L8 |
 | P20 | `documentos_obrigatorios` sempre acusa ausência enquanto o upload não existe. Correto, mas só deixa de ser ruído com o L7 | L7 |
 | P21 | Duração máxima e pares incompatíveis são constantes em `exigencias.py`. Se a operação quiser ajustar sem deploy, viram configuração | quando pedirem |
@@ -326,22 +373,24 @@ L1 fechado e verificado: 20 testes passando, `alembic upgrade head` e `downgrade
 o seed roda duas vezes sem duplicar, `/health` continua 200. O clone do PC A precisou de `.venv`
 e `.env` próprios — nenhum dos dois vem do repositório.
 
-L5 fechado e verificado: 90 testes passando; no banco de desenvolvimento a `PT-2026-0002`
-percorreu o fluxo até `LIBERACAO` com quatro assinaturas de mesmo hash e quatro elos de trilha
-encadeados, e foi barrada na entrada em execução pela NR-35 vencida.
+L6 fechado e verificado: 104 testes passando; no banco de desenvolvimento a cadeia da
+`PT-2026-0002` fecha, denuncia a adulteração feita por SQL direto e volta a fechar quando o
+valor original é restaurado. O ORM recusa qualquer `UPDATE` ou `DELETE` na trilha.
 
-Próximo passo: **L6 — Trilha de auditoria imutável**. Metade já existe: `app/audit/trilha.py`
-escreve a cadeia `H(anterior + payload)` a cada transição, e só faz INSERT. Falta:
+Próximo passo: **L7 — Anexos, validade e OCR**. O terreno:
 
-- **Verificador de integridade** — percorrer a cadeia de uma PT e apontar onde ela quebra. É o
-  teste obrigatório "audit chain detects tampering", que ainda não existe.
-- **API de consulta** (`/pts/{id}/trilha`), com o escopo da regra 5 aplicado na consulta.
-- **Evento compensatório**: `evento_compensado_id` está no modelo e nunca foi usado. Correção
-  é evento novo apontando para o original, jamais `UPDATE`.
-- Cobrir também os eventos que ainda não são registrados: login (P16) e criação de PT.
-
-Cuidado: hoje só transições geram evento. Se o L6 passar a registrar criação e edição, a
-cadeia de PTs antigas continua válida — ela é por PT e por ordem de inserção, não global.
+- A tabela `anexo` existe desde o L1 com `hash_sha256`, `valido_ate` e `enviado_por_id`, e o
+  motor de regras (L4) **já cobra** APR e ASO por tipo de trabalho — hoje toda PT acusa
+  `documento_ausente`, e é o L7 que faz isso deixar de ser ruído (P20).
+- `AnexoCreate` já recusa `/`, `\` e `..` no nome do arquivo. O upload precisa continuar não
+  confiando nesse nome para montar caminho em disco: gravar com nome gerado e guardar o
+  original só como rótulo.
+- `uploads/` já está no `.gitignore`.
+- O hash do arquivo é o que prova que ele não mudou depois de anexado — calcular no servidor,
+  sobre o conteúdo recebido, e nunca aceitar do cliente.
+- Anexar e remover anexo mudam o documento: precisam entrar na trilha e considerar que o hash
+  da PT muda junto.
+- OCR é a parte cara. Se não couber no loop, é pendência declarada, não meia implementação.
 
 Lembretes que já custaram caro: todo modelo novo entra em `app/models/__init__.py`, senão o
 autogenerate o ignora; toda coluna de enum passa por `enum_col()`; nenhuma constraint nasce sem

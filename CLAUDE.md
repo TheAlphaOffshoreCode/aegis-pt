@@ -148,6 +148,14 @@ Deviations: `SUSPENSA` (only from `EM_EXECUCAO`) and `REJEITADA` (returns to `RA
 - **In tests, `db` and the request use different sessions.** After a `TestClient` call changed
   something, call `db.expire_all()` — otherwise the test reads its own stale identity map and
   fails for the wrong reason.
+- **The audit payload format is a frozen contract.** Changing what goes into the hash without
+  bumping `VERSAO_PAYLOAD` in `app/audit/formato.py` retroactively invalidates every event
+  already sealed, and the verifier starts reporting tampering that never happened. Add a
+  field → bump the version → keep the previous format buildable.
+- **`montar_payload` is used by both the writer and the verifier.** If the verifier rebuilt
+  the payload on its own, any drift between the two would look like tampering.
+- **Anything written into an `audit_event` must be set at creation.** Assigning an attribute
+  afterwards marks the object dirty and the append-only guard refuses the flush — correctly.
 
 ## Conventions
 

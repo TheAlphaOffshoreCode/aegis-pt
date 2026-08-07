@@ -115,6 +115,34 @@ Device and IP are read from the request, never accepted from the body. Geolocati
 from the client, because only the client has it — it is recorded as received, and never
 invented when missing.
 
+## The audit trail (L6)
+
+Three separate guarantees, because they fail in different ways:
+
+**Append-only is enforced, not documented.** A `before_flush` listener on `SessionLocal`
+raises `TrilhaImutavel` on any attempt to update or delete an `AuditEvent`. It is registered on
+the sessionmaker rather than on the `Session` class — the same trap paid for in L0 with
+`PRAGMA foreign_keys`, where a class-level listener would reach every session in the process.
+
+**The chain detects tampering.** `verificar_cadeia` recomputes each link from what is stored
+and compares. Two checks per link, because they catch different things: the stored
+`hash_anterior` must match the previous link (catches a **removed** or reordered event), and
+the recomputed `hash_evento` must match the record (catches an **altered** one). Verified
+against the development database by editing a row through raw SQL — the realistic attack,
+since it bypasses the application entirely — and confirming the chain closes again once the
+value is restored.
+
+**The payload format is versioned, and frozen.** `app/audit/formato.py` holds `VERSAO_PAYLOAD`,
+and every event stores the format it was sealed with. This is not ceremony: adding
+`evento_compensado_id` to the payload in this very loop invalidated every event written in L5
+until each was verified by its own format. A verifier that cries wolf is worse than none, so
+changing the payload without bumping the version is a defect, and the older format must stay
+buildable.
+
+Corrections never rewrite. `POST /pts/{id}/trilha/{evento_id}/compensacao` appends an event
+referencing the original, restricted to `coordenador` and `oim`. The wrong record stays
+visible.
+
 ## Data integrity
 
 - Foreign keys are enforced on SQLite (`PRAGMA foreign_keys=ON` on every connection).

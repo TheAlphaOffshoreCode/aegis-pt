@@ -15,6 +15,8 @@ from app.models.enums import EstadoPT, PerfilUsuario, TipoTrabalho
 from app.models.organizacao import Area, Equipamento
 from app.models.permissao import ModeloPT, PermissaoTrabalho, PTEquipe
 from app.models.pessoa import Usuario
+from app.audit.documento import hash_do_documento
+from app.audit.trilha import Contexto, registrar_evento
 from app.models.tipos import agora_utc
 from app.rules.exigencias import ESTADOS_QUE_OCUPAM_A_AREA
 from app.rules.formulario import validar_respostas
@@ -138,7 +140,10 @@ def _sincronizar_equipe(db: Session, pt: PermissaoTrabalho, equipe: Sequence) ->
 
 
 def criar_pt(
-    db: Session, dados: PermissaoTrabalhoCreate, autor: Usuario
+    db: Session,
+    dados: PermissaoTrabalhoCreate,
+    autor: Usuario,
+    contexto: Contexto = Contexto(),
 ) -> PermissaoTrabalho:
     """Cria a PT em `RASCUNHO`. Número, estado, versão e requisitante são do servidor."""
     pendencias = _validar_lotacao(dados.unidade_id, autor)
@@ -177,6 +182,17 @@ def criar_pt(
         db.add(pt)
         db.flush()
         _sincronizar_equipe(db, pt, dados.equipe)
+        # A trilha começa no nascimento da PT: o primeiro elo é a criação, não a primeira
+        # transição — senão a origem do documento fica fora da cadeia.
+        registrar_evento(
+            db,
+            pt=pt,
+            tipo_evento="pt.criada",
+            ator=autor,
+            hash_documento=hash_do_documento(pt),
+            estado_destino=EstadoPT.RASCUNHO,
+            contexto=contexto,
+        )
         try:
             db.commit()
         except IntegrityError:
@@ -244,7 +260,11 @@ def obter_pt(db: Session, pt_id: int, usuario: Usuario) -> PermissaoTrabalho | N
 
 
 def atualizar_pt(
-    db: Session, pt: PermissaoTrabalho, dados: PermissaoTrabalhoUpdate, autor: Usuario
+    db: Session,
+    pt: PermissaoTrabalho,
+    dados: PermissaoTrabalhoUpdate,
+    autor: Usuario,
+    contexto: Contexto = Contexto(),
 ) -> PermissaoTrabalho:
     """Corrige uma PT ainda em rascunho."""
     if pt.estado != EstadoPT.RASCUNHO:
@@ -279,6 +299,19 @@ def atualizar_pt(
     pt.controles = dados.controles
     pt.respostas = dados.respostas
     _sincronizar_equipe(db, pt, dados.equipe)
+    db.flush()
+
+    registrar_evento(
+        db,
+        pt=pt,
+        tipo_evento="pt.editada",
+        ator=autor,
+        # Depois do flush: o hash precisa ser o do documento já corrigido.
+        hash_documento=hash_do_documento(pt),
+        estado_origem=EstadoPT.RASCUNHO,
+        estado_destino=EstadoPT.RASCUNHO,
+        contexto=contexto,
+    )
 
     db.commit()
     db.refresh(pt)

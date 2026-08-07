@@ -8,10 +8,12 @@ from sqlalchemy.orm import Session
 
 from app.audit.trilha import Contexto
 from app.database import get_db
-from app.models.enums import EstadoPT, TipoTrabalho
+from app.models.auditoria import AuditEvent
+from app.models.enums import EstadoPT, PerfilUsuario, TipoTrabalho
 from app.models.permissao import ModeloPT, PermissaoTrabalho
 from app.models.pessoa import Usuario
 from app.rules.pendencias import bloqueiam
+from app.schemas.auditoria import AuditEventRead, CompensacaoRequest, TrilhaRead
 from app.schemas.permissao import (
     AvaliacaoRead,
     ModeloPTRead,
@@ -22,7 +24,7 @@ from app.schemas.permissao import (
     TransicaoRequest,
 )
 from app.security.dependencias import exigir_perfis, usuario_atual
-from app.services import permissoes
+from app.services import auditoria, permissoes
 from app.services.transicoes import executar_transicao, transicoes_disponiveis
 
 router = APIRouter(prefix="/pts", tags=["permissões de trabalho"])
@@ -53,11 +55,12 @@ def modelo_do_tipo(
 @router.post("", response_model=PermissaoTrabalhoRead, status_code=status.HTTP_201_CREATED)
 def criar(
     dados: PermissaoTrabalhoCreate,
+    request: Request,
     db: Session = Depends(get_db),
     autor: Usuario = Depends(exigir_perfis(*permissoes.PERFIS_QUE_EMITEM)),
 ) -> PermissaoTrabalho:
     """Abre uma PT em rascunho."""
-    return permissoes.criar_pt(db, dados, autor)
+    return permissoes.criar_pt(db, dados, autor, _contexto(request, None))
 
 
 @router.get("", response_model=list[PermissaoTrabalhoRead])
@@ -86,11 +89,14 @@ def obter(
 def atualizar(
     pt_id: int,
     dados: PermissaoTrabalhoUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     autor: Usuario = Depends(exigir_perfis(*permissoes.PERFIS_QUE_EMITEM)),
 ) -> PermissaoTrabalho:
     """Corrige um rascunho. Fora de `RASCUNHO` a mudança é transição, e transição é do L5."""
-    return permissoes.atualizar_pt(db, _pt_no_escopo(db, pt_id, autor), dados, autor)
+    return permissoes.atualizar_pt(
+        db, _pt_no_escopo(db, pt_id, autor), dados, autor, _contexto(request, None)
+    )
 
 
 @router.get("/{pt_id}/pendencias", response_model=AvaliacaoRead)
@@ -133,18 +139,66 @@ def transicionar(
     ator: Usuario = Depends(usuario_atual),
 ) -> PermissaoTrabalho:
     """Move a PT de estado, assinando e registrando na trilha."""
-    contexto = Contexto(
-        dispositivo=request.headers.get("user-agent"),
-        ip=None if request.client is None else request.client.host,
-        geolocalizacao=dados.geolocalizacao,
-    )
     return executar_transicao(
         db,
         _pt_no_escopo(db, pt_id, ator),
         dados.destino,
         ator,
         motivo=dados.motivo,
-        contexto=contexto,
+        contexto=_contexto(request, dados.geolocalizacao),
+    )
+
+
+@router.get("/{pt_id}/trilha", response_model=TrilhaRead)
+def trilha(
+    pt_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(usuario_atual),
+) -> TrilhaRead:
+    """A trilha da PT, já conferida elo a elo."""
+    pt = _pt_no_escopo(db, pt_id, usuario)
+    eventos, quebras = auditoria.conferir(db, pt)
+    return TrilhaRead(
+        pt_id=pt.id,
+        numero=pt.numero,
+        integra=not quebras,
+        quebras=[q.como_dict() for q in quebras],
+        eventos=eventos,
+    )
+
+
+@router.post(
+    "/{pt_id}/trilha/{evento_id}/compensacao",
+    response_model=AuditEventRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def compensar_evento(
+    pt_id: int,
+    evento_id: int,
+    dados: CompensacaoRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    ator: Usuario = Depends(
+        exigir_perfis(PerfilUsuario.COORDENADOR, PerfilUsuario.OIM)
+    ),
+) -> AuditEvent:
+    """Corrige um registro da trilha sem apagá-lo: acrescenta um evento que o referencia."""
+    return auditoria.compensar(
+        db,
+        _pt_no_escopo(db, pt_id, ator),
+        evento_id,
+        ator,
+        dados.motivo,
+        _contexto(request, dados.geolocalizacao),
+    )
+
+
+def _contexto(request: Request, geolocalizacao: str | None) -> Contexto:
+    """Dispositivo e IP vêm da requisição; só a geolocalização o cliente informa."""
+    return Contexto(
+        dispositivo=request.headers.get("user-agent"),
+        ip=None if request.client is None else request.client.host,
+        geolocalizacao=geolocalizacao,
     )
 
 

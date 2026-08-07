@@ -146,6 +146,28 @@ different steps legitimately — the executant starts *and* closes the work. Sus
 resuming produce no signature at all, because they repeat within a version; they live in the
 trail, which carries the same actor, timestamp, context and hash.
 
+### `GET /pts/{id}/trilha`
+
+The permit's audit trail, already verified link by link.
+
+```json
+{ "pt_id": 12, "numero": "PT-2026-0012", "integra": true, "quebras": [],
+  "eventos": [ { "tipo_evento": "pt.criada", "ator_id": 3, "hash_anterior": null,
+                 "hash_evento": "a4bca07a…", "versao_payload": 2, "…": "…" } ] }
+```
+
+`integra: false` comes with `quebras`, each naming the event, its position and whether the
+content stopped matching its hash or the previous link no longer fits — which distinguishes an
+**altered** event from a **removed** one.
+
+### `POST /pts/{id}/trilha/{evento_id}/compensacao`
+
+Corrects a record without touching it: appends a new event pointing at the original through
+`evento_compensado_id`. Restricted to `coordenador` and `oim` (plus `admin`). The wrong event
+stays visible — a trail that disappears when it is inconvenient is not a trail.
+
+A compensation cannot be compensated: register a new event instead.
+
 ## Business conflicts
 
 Every blocking pendency returns `409` with the structured list, produced by a single handler
@@ -168,6 +190,8 @@ Risk (L4): `janela_vencida`, `janela_excede_o_maximo`, `janela_menor_que_a_durac
 `papel_incompativel_com_o_perfil`, `assinante_inativo`.
 
 Flow (L5): `transicao_invalida`, `motivo_obrigatorio`.
+
+Trail (L6): `evento_inexistente`, `compensacao_de_compensacao`.
 
 `422` remains what it always was: the payload did not even parse. `409` means it parsed and
 the business refused it.
