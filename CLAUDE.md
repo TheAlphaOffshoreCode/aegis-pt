@@ -102,6 +102,15 @@ Deviations: `SUSPENSA` (only from `EM_EXECUCAO`) and `REJEITADA` (returns to `RA
   without a real secret — a development fallback is how a weak key reaches production.
 - **`tests/conftest.py` sets `AEGIS_*` environment variables before importing `app`,** because
   `app/database.py` builds the engine at import time. Env vars outrank the `.env` file.
+- **Enum columns go through `enum_col()`** in `app/models/tipos.py`. A bare `Enum(...)` stores
+  the member *name* (`NR_35`), not its value (`NR-35`), and the database silently stops
+  matching the norm, the API and the screen.
+- **`Base.metadata` carries a `NAMING_CONVENTION`.** Batch mode recreates the table on SQLite,
+  and an anonymous constraint does not survive that. Never add a constraint without a name.
+- **`audit_event.pt_id` is `ON DELETE RESTRICT` on purpose.** Deleting a permit with a trail
+  would delete the evidence with it. There is a test; do not "fix" it into CASCADE.
+- **The permit's `estado`, `numero`, `uuid` and `versao` have no write schema.** They are the
+  server's to decide — a client that can post its own state can post `LIBERACAO`.
 
 ## Conventions
 
