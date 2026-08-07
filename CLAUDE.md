@@ -15,6 +15,10 @@ closed scope and an objective acceptance criterion.
   It carries the open pendencies and the exact resume point.
 - Inside every loop run seven steps: plan → build → test → self-review → security → doc →
   report. If test, self-review or security fails, go back to build **within the same loop**.
+- **The `doc` step includes `README.md`**, not only `LOOP_STATE.md` and `docs/`. The README is
+  the only artifact no test can fail for, so it rots silently — it went stale twice in a single
+  day. Status badge, current state, endpoint table, test count and roadmap all move with the
+  loop. Verify every number before writing it; do not estimate.
 - Never leave `# TODO: implement later` on a critical path. Anything that does not fit the
   current loop becomes a declared pendency in `LOOP_STATE.md`.
 
