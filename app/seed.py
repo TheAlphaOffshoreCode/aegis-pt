@@ -10,11 +10,17 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.database import SessionLocal
 from app.models import Area, Certificacao, Equipamento, Unidade, Usuario
 from app.models.enums import Criticidade, PerfilUsuario, TipoCertificacao, TipoUnidade
+from app.security.credenciais import gerar_hash
 
 HOJE = date.today()
+
+# Senha única de desenvolvimento. `main()` recusa rodar fora de desenvolvimento — seed com
+# senha conhecida é exatamente como uma credencial de teste chega à produção.
+SENHA_PADRAO = "aegis-dev-2026"
 
 
 def _obter_ou_criar(db: Session, modelo: type, filtro: dict, **valores):
@@ -30,6 +36,10 @@ def _obter_ou_criar(db: Session, modelo: type, filtro: dict, **valores):
 
 def semear(db: Session) -> None:
     """Cria 1 unidade, 3 áreas, 5 usuários, 2 equipamentos e 4 certificações."""
+    # A guarda mora aqui, e não só em `main()`: quem importa `semear` também precisa esbarrar.
+    if get_settings().environment != "development":
+        raise RuntimeError("Seed é de desenvolvimento: ele cria contas com senha conhecida.")
+
     unidade = _obter_ou_criar(
         db,
         Unidade,
@@ -88,9 +98,15 @@ def semear(db: Session) -> None:
             empresa=empresa,
             cargo=cargo,
             perfil=perfil,
+            unidade_id=unidade.id,
+            senha_hash=gerar_hash(SENHA_PADRAO),
         )
         for matricula, nome, email, empresa, cargo, perfil in pessoas
     }
+    for usuario in usuarios.values():
+        # Base semeada antes do L2 não tem senha; sem isto ela ficaria impossível de usar.
+        if not usuario.senha_hash:
+            usuario.senha_hash = gerar_hash(SENHA_PADRAO)
 
     certificacoes = [
         # Rafael tem NR-34 em dia e a NR-35 **vencida** — é o caso que o L4 precisa barrar
@@ -120,7 +136,10 @@ def main() -> None:
     """Executa o seed contra o banco configurado em `AEGIS_DATABASE_URL`."""
     with SessionLocal() as db:
         semear(db)
-    print("Seed aplicado: 1 unidade, 3 áreas, 5 usuários, 2 equipamentos, 4 certificações.")
+    print(
+        "Seed aplicado: 1 unidade, 3 áreas, 5 usuários, 2 equipamentos, 4 certificações.\n"
+        f"Matrículas 10001 a 10005, senha '{SENHA_PADRAO}'."
+    )
 
 
 if __name__ == "__main__":

@@ -54,6 +54,7 @@ python -m pytest -q
 python -m pytest tests/test_bootstrap.py::test_health_responde_200 -q
 python -m alembic upgrade head
 python -m alembic downgrade -1
+python -m app.seed
 python -m alembic revision --autogenerate -m "descricao"
 ```
 
@@ -111,6 +112,14 @@ Deviations: `SUSPENSA` (only from `EM_EXECUCAO`) and `REJEITADA` (returns to `RA
   would delete the evidence with it. There is a test; do not "fix" it into CASCADE.
 - **The permit's `estado`, `numero`, `uuid` and `versao` have no write schema.** They are the
   server's to decide — a client that can post its own state can post `LIBERACAO`.
+- **`jwt.decode` always gets an explicit `algorithms=[...]`.** Without it a token forged with
+  `alg: none` is accepted. There is a test that forges exactly that.
+- **The token carries no profile.** Profile and posting are read from the database on every
+  request, so revoking access takes effect now instead of when the token expires.
+- **`HTTPBearer(auto_error=False)`.** The default answers `403` for a missing credential, and
+  a missing credential is `401`.
+- **Adding a `NOT NULL` column needs `server_default` in the migration** whenever the table
+  already has rows. Autogenerate omits it and the upgrade fails on a populated database.
 
 ## Conventions
 

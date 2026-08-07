@@ -23,6 +23,10 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./aegis_pt.db"
 
+    # Um turno a bordo. Fica configurável porque a operação real ajusta esse número,
+    # e sessão que vence no meio do turno é o que empurra gente a compartilhar login.
+    token_expiracao_minutos: int = 480
+
     # Origens do PWA. Em produção, listar explicitamente; nunca "*".
     cors_origins: list[str] = ["http://localhost:8000", "http://127.0.0.1:8000"]
 

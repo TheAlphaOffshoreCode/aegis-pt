@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
-from app.routers import health
+from app.routers import auth, health
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
@@ -29,6 +29,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
+app.include_router(auth.router)
 
 # Montado em /static, e não em "/", para que nenhum router incluído depois seja engolido.
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

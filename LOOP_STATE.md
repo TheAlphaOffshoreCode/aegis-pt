@@ -6,8 +6,8 @@ Fonte de verdade para retomar o trabalho. Atualizado ao fim de cada loop.
 |---|---|---|---|
 | L0 | Bootstrap | ✅ concluído | 2026-08-05 |
 | L1 | Modelo de dados e migrations | ✅ concluído | 2026-08-07 |
-| L2 | Autenticação e RBAC | ⏳ aguardando autorização | — |
-| L3 | CRUD de PT e formulário dinâmico | — | — |
+| L2 | Autenticação e RBAC | ✅ concluído | 2026-08-07 |
+| L3 | CRUD de PT e formulário dinâmico | ⏳ aguardando autorização | — |
 | L4 | Motor de regras determinístico | — | — |
 | L5 | Máquina de estados e fluxo de aprovação | — | — |
 | L6 | Trilha de auditoria imutável | — | — |
@@ -104,6 +104,50 @@ Nenhum endpoint novo, logo nenhuma superfície HTTP nova. Revisão fechou uma ar
 de existir: `AnexoCreate.nome_arquivo` agora recusa `/`, `\` e `..`, porque o L7 vai usar
 esse nome para gravar em disco. Coberto por teste parametrizado.
 
+---
+
+## L2 — Autenticação e RBAC (2026-08-07)
+
+**Entregue:** login com Argon2id, sessão JWT, dependências de RBAC e escopo por unidade.
+**Aceite:** 29 testes passando, `/auth/login` devolve token, `/auth/eu` responde 401 sem
+credencial, e a migration nova sobe numa base que já tinha usuários.
+
+### Arquivos tocados
+
+| Arquivo | Papel |
+|---|---|
+| `app/security/credenciais.py` | hash Argon2id, token JWT, gasto de tempo contra oráculo |
+| `app/security/dependencias.py` | `usuario_atual`, `exigir_perfis`, `unidades_visiveis` |
+| `app/routers/auth.py` | `POST /auth/login`, `GET /auth/eu` |
+| `app/schemas/auth.py` | `LoginRequest`, `TokenResponse`, `SessaoRead` |
+| `app/models/pessoa.py` | `usuario`: `senha_hash`, `ultimo_acesso`, `unidade_id` |
+| `app/config.py` | `token_expiracao_minutos` (480 = um turno) |
+| `app/seed.py` | senha de desenvolvimento e lotação; guarda de ambiente em `semear()` |
+| `migrations/versions/13bcae197fe3_*.py` | colunas de credencial, com `server_default` |
+| `tests/test_auth.py` | 9 testes |
+
+### Decisões
+
+- **Sem endpoint de refresh**, apesar de o L0 tê-lo planejado. Refresh é uma segunda
+  credencial de vida longa para guardar, rotacionar e revogar; sessão de 8 h cobre o turno
+  inteiro e elimina o problema que ele resolveria. Reavaliar se o turno deixar de caber.
+- **Token não carrega perfil.** Perfil e lotação são lidos do banco a cada requisição, então
+  revogar acesso vale na hora — e não quando o token vencer.
+- **`admin` passa em tudo** em `exigir_perfis`, por decisão explícita.
+- **Escopo falha fechado:** usuário sem lotação e sem perfil global enxerga conjunto vazio.
+- **Lotação é uma unidade só** (`usuario.unidade_id`). Multi-unidade viraria tabela
+  associativa; hoje seria especulação.
+
+### Segurança
+
+- Mesma resposta `401` para senha errada, matrícula inexistente e conta desativada — e um
+  Argon2 descartável no caminho da matrícula inexistente, para o tempo também não responder.
+- `jwt.decode` com `algorithms=["HS256"]` explícito. Há teste que forja `alg: none`, outro
+  com chave errada e outro expirado.
+- Desativar usuário corta o acesso antes do token vencer — coberto por teste.
+- A guarda do seed foi movida de `main()` para `semear()`: quem importa a função também
+  esbarra nela.
+
 ### Pendências abertas
 
 | # | Pendência | Loop de destino |
@@ -111,7 +155,7 @@ esse nome para gravar em disco. Coberto por teste parametrizado.
 | P1 | Fontes Oswald e JetBrains Mono servidas localmente (hoje só fallback de sistema) | L11/L12 |
 | P2 | `manifest.json` e service worker | L12 |
 | P3 | Cabeçalhos de segurança, rate limiting, tratamento de erro sem stack | L13 |
-| P4 | Dependências de auth (JWT, Argon2/bcrypt) entram no `requirements.txt` | L2 |
+| ~~P4~~ | ~~Dependências de auth~~ — `argon2-cffi` e `pyjwt` no `requirements.txt` | resolvido no L2 |
 | P5 | Dependências de IA (SDK Anthropic, índice vetorial) entram no `requirements.txt` | L9 |
 | P6 | `starlette.testclient` avisa que `httpx` está depreciado em favor de `httpx2` — sem efeito hoje | reavaliar em L13 |
 | ~~P7~~ | ~~Repositório sem remote~~ — publicado em TheAlphaOffshoreCode/aegis-pt, CI verde | resolvido em 05/08/2026 |
@@ -119,8 +163,11 @@ esse nome para gravar em disco. Coberto por teste parametrizado.
 | P9 | Skill `impeccable` aplicada às telas reais; o shell atual é diagnóstico | L11/L12 |
 | P10 | Coluna `permissao_trabalho.respostas` foi antecipação do formulário dinâmico, não está no `DATA_MODEL.md` original — confirmar no L3 ou remover | L3 |
 | P11 | `AuditEventRead`, `AlertaRead` e `AnexoCreate` existem sem consumidor até os loops que os usam | L6/L7/L11 |
-| P12 | `usuario` ainda não tem credencial: hash de senha, último acesso e bloqueio entram com o RBAC | L2 |
+| ~~P12~~ | ~~`usuario` sem credencial~~ — `senha_hash`, `ultimo_acesso` e `unidade_id` criados | resolvido no L2 |
 | P13 | Compatibilidade com Python 3.11 só é provada no CI — esta máquina tem apenas 3.14 | contínuo |
+| P14 | Login sem limite de tentativas e sem bloqueio de conta; sem lista de revogação de token — token vazado vale até vencer | L13 |
+| P15 | Lotação é uma unidade só (`usuario.unidade_id`). Multi-unidade exigiria tabela associativa | quando aparecer o caso |
+| P16 | Evento de auditoria de login não é gravado: a cadeia de hash só nasce no L6 | L6 |
 
 ### Ponto exato de retomada
 
@@ -128,10 +175,19 @@ L1 fechado e verificado: 20 testes passando, `alembic upgrade head` e `downgrade
 o seed roda duas vezes sem duplicar, `/health` continua 200. O clone do PC A precisou de `.venv`
 e `.env` próprios — nenhum dos dois vem do repositório.
 
-Próximo passo: **L2 — Autenticação e RBAC**. Ponto de partida: coluna de credencial em `usuario`
-(P12), dependências de auth no `requirements.txt` (P4), e o filtro de escopo por unidade/área
-que a regra 5 exige aplicar **antes** de qualquer consulta — não como filtro de resposta.
+L2 fechado e verificado: 29 testes passando, `/auth/login` devolve token, `/auth/eu` responde
+401 sem credencial, e a migration de credencial subiu numa base que já tinha usuários semeados.
+
+Próximo passo: **L3 — CRUD de PT e formulário dinâmico**. Ponto de partida: `exigir_perfis` e
+`unidades_visiveis` já existem em `app/security/dependencias.py` e precisam entrar na **query**
+de listagem de PT, não no resultado. A numeração da PT (`PT-AAAA-NNNN`) e o estado inicial são
+do servidor — `PermissaoTrabalhoCreate` já os recusa de propósito. Confirmar ou remover a coluna
+`respostas` (P10) enquanto nada depende dela.
 
 Lembretes que já custaram caro: todo modelo novo entra em `app/models/__init__.py`, senão o
-autogenerate o ignora; toda coluna de enum passa por `enum_col()`; e nenhuma constraint nasce
-sem nome, por causa do batch mode do SQLite.
+autogenerate o ignora; toda coluna de enum passa por `enum_col()`; nenhuma constraint nasce sem
+nome, por causa do batch mode do SQLite; e coluna `NOT NULL` nova precisa de `server_default`
+na migration quando a tabela já tem linhas.
+
+Credenciais de desenvolvimento: matrículas `10001` a `10005`, senha `aegis-dev-2026`
+(`python -m app.seed`, que recusa rodar fora de `environment=development`).

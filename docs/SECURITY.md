@@ -28,11 +28,42 @@ development, because the credentialed PWA is the only client.
 Security headers, rate limiting and error handling that never leaks a stack trace are
 scheduled for L13.
 
+## Authentication (L2)
+
+Passwords are stored as **Argon2id** hashes (`argon2-cffi`, library defaults). The plaintext
+is never stored, logged or returned; `senha_hash` is `NOT NULL` with an empty default, and an
+empty hash authenticates nobody.
+
+Sessions are **JWT `HS256`** signed with `AEGIS_SECRET_KEY`. `jwt.decode` always receives an
+explicit `algorithms=["HS256"]`: without it, a token forged with `alg: none` would be
+accepted. There is a test that forges exactly that one, plus a wrong-key token and an expired
+token.
+
+The token carries only `sub`, `iat` and `exp`. **No profile inside the token** — the profile
+travels with the user in the database and is read on every request, so a revoked profile or a
+deactivated account stops working immediately instead of surviving until expiry.
+
+Login answers the same `401` for wrong password, unknown matrícula and deactivated account,
+and burns an equivalent Argon2 verification when the matrícula does not exist, so neither the
+message nor the timing reveals who exists on board.
+
+Not covered yet: **login rate limiting and account lockout** (L13, with the other hardening),
+and there is **no token revocation list** — a leaked token is valid until it expires.
+
 ## Authorization
 
 L0 exposes only `/health`, `/` and `/static/*` — no user data on any of them.
 From L2 every endpoint carries an explicit authorization dependency; a route without one is
 a defect, not a default.
+
+`exigir_perfis(...)` in `app/security/dependencias.py` is the RBAC gate; `admin` passes
+everything by design. `unidades_visiveis()` resolves the user's scope and **fails closed** —
+a user with no posting and no global profile sees an empty set, not everything. Per rule 5
+this set enters the query, never filters the result: filtering afterwards is still a leak,
+just one with an extra step.
+
+The development seed refuses to run outside `environment=development`, and the guard sits in
+`semear()` itself rather than only in `main()` — it creates accounts with a known password.
 
 Segregation of duties (the issuer never signs their own permit) is enforced in the rule
 engine, not in the interface.

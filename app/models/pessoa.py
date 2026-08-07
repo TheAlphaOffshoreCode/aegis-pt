@@ -1,8 +1,8 @@
 """Quem trabalha: usuário e suas certificações."""
 
-from datetime import date
+from datetime import date, datetime
 
-from sqlalchemy import Date, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Date, DateTime, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -11,7 +11,7 @@ from app.models.tipos import TimestampMixin, enum_col
 
 
 class Usuario(TimestampMixin, Base):
-    """Pessoa com acesso ao sistema. Credencial e senha entram no L2."""
+    """Pessoa com acesso ao sistema."""
 
     __tablename__ = "usuario"
 
@@ -23,6 +23,13 @@ class Usuario(TimestampMixin, Base):
     cargo: Mapped[str] = mapped_column(String(80), nullable=False)
     perfil: Mapped[PerfilUsuario] = mapped_column(enum_col(PerfilUsuario), nullable=False)
     ativo: Mapped[bool] = mapped_column(default=True, nullable=False)
+
+    # Lotação. Nulo significa alcance global (auditor, admin) — é o que o escopo da regra 5
+    # consulta antes de qualquer consulta ao banco.
+    unidade_id: Mapped[int | None] = mapped_column(ForeignKey("unidade.id"), index=True)
+    # Nunca a senha: só o hash Argon2. Vazio = usuário que ainda não pode entrar.
+    senha_hash: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    ultimo_acesso: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     certificacoes: Mapped[list["Certificacao"]] = relationship(
         back_populates="usuario", cascade="all, delete-orphan"
