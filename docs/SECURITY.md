@@ -92,6 +92,29 @@ Two decisions worth stating because they are conservative on purpose:
 `GET /pts/{id}/pendencias` exposes the verdict without changing anything. Enforcing it at the
 transition is L5: the engine decides, the state machine applies.
 
+## The approval flow (L5)
+
+The state machine in `app/workflow/maquina.py` is an explicit graph, and rule 6 falls out of
+that rather than being enforced by a check: **a skipped step is not a case to reject, it is a
+transition that does not exist.** `ARQUIVADA` has no outgoing steps, `SUSPENSA` is reachable
+only from `EM_EXECUCAO`, and `REJEITADA` leads only back to `RASCUNHO`.
+
+Entering `EM_EXECUCAO` — from release or from a resumed suspension — is the only point that
+demands the rule engine be clean. It is where the permit stops being paper and becomes people
+exposed.
+
+**Every transition writes to `audit_event` before the commit**, with actor, timestamp, device,
+IP, geolocation and document hash, chained as `hash_evento = H(hash_anterior + payload)`. The
+chain is written here, in L5, rather than in L6, because rule 6 requires the record to exist at
+the moment the transition happens — writing transitions now and chaining later would mean
+auditing a past that was never captured. Only INSERTs exist in `app/audit/trilha.py`; nothing
+in the system updates or deletes an event (rule 4). The verifier and the compensating event
+are L6.
+
+Device and IP are read from the request, never accepted from the body. Geolocation does come
+from the client, because only the client has it — it is recorded as received, and never
+invented when missing.
+
 ## Data integrity
 
 - Foreign keys are enforced on SQLite (`PRAGMA foreign_keys=ON` on every connection).

@@ -9,8 +9,8 @@ Fonte de verdade para retomar o trabalho. Atualizado ao fim de cada loop.
 | L2 | Autenticação e RBAC | ✅ concluído | 2026-08-07 |
 | L3 | CRUD de PT e formulário dinâmico | ✅ concluído | 2026-08-07 |
 | L4 | Motor de regras determinístico | ✅ concluído | 2026-08-07 |
-| L5 | Máquina de estados e fluxo de aprovação | ⏳ aguardando autorização | — |
-| L6 | Trilha de auditoria imutável | — | — |
+| L5 | Máquina de estados e fluxo de aprovação | ✅ concluído | 2026-08-07 |
+| L6 | Trilha de auditoria imutável | ⏳ aguardando autorização | — |
 | L7 | Anexos, validade e OCR | — | — |
 | L8 | Busca estruturada e dossiê | — | — |
 | L9 | IA: busca em linguagem natural | — | — |
@@ -241,6 +241,55 @@ vez de converter dentro do motor — remendo no motor deixaria o próximo compar
 bug. O teste de migration confirmou que o tipo não altera o esquema, e há teste novo provando
 que a data volta do banco com fuso.
 
+---
+
+## L5 — Máquina de estados e fluxo de aprovação (2026-08-07)
+
+**Entregue:** o fluxo completo da PT, com assinatura por etapa, versionamento e escrita da
+trilha encadeada.
+**Aceite:** 90 testes passando. No banco de desenvolvimento, uma PT percorreu
+`RASCUNHO → VALIDACAO → ANALISE_SMS → APROVACAO → LIBERACAO` com quatro assinaturas e quatro
+elos de trilha, e **parou na liberação** por causa da NR-35 vencida que o seed plantou no L1.
+
+### Arquivos tocados
+
+| Arquivo | Papel |
+|---|---|
+| `app/workflow/maquina.py` | o grafo de transições, papel e exigência de risco por passo |
+| `app/audit/documento.py` | `snapshot_da_pt`, `hash_do_documento`, `diferencas` |
+| `app/audit/trilha.py` | escrita append-only encadeada (`H(anterior + payload)`) |
+| `app/services/transicoes.py` | orquestra: valida, assina, versiona, registra |
+| `app/routers/pts.py` | `GET`/`POST /pts/{id}/transicoes` |
+| `app/models/permissao.py` | `Assinatura.estado_destino` e nova unicidade |
+| `migrations/versions/126544508b16_*.py` | coluna e constraint, em duas etapas |
+| `tests/test_workflow.py`, `tests/test_transicoes.py` | 18 testes novos |
+
+### Decisões
+
+- **O hash do documento exclui o `estado`.** Assinar é assinar conteúdo, não posição no fluxo.
+  Se o hash mudasse a cada transição, duas assinaturas da mesma versão não bateriam e nada
+  seria conferível depois. Provado no smoke: as quatro assinaturas compartilham um só hash.
+- **A cadeia de auditoria nasce aqui, não no L6.** A regra 6 exige o registro no instante da
+  transição; gravar agora e encadear depois seria auditar um passado não guardado. Ao L6 ficam
+  o verificador, a API de trilha e o evento compensatório.
+- **Regra 6 sai de graça do grafo.** Pular etapa não é caso a recusar: o passo não existe.
+- **`motivo` é obrigatório para rejeitar e suspender.** Sem ele não há o que corrigir, e é o
+  primeiro registro que uma investigação procura.
+- **Suspender e retomar não assinam.** São eventos operacionais que se repetem na mesma versão;
+  ficam na trilha, com o mesmo ator, momento, contexto e hash.
+
+### Defeito de modelagem do L1, corrigido aqui
+
+A unicidade da assinatura era `(pt, papel, versão)`. O fluxo real mostrou que **o mesmo papel
+assina etapas diferentes de propósito** — o executante inicia e encerra o trabalho, o técnico
+analisa e depois suspende. A constraint passou a ser `(pt, etapa, versão)`, com a coluna
+`estado_destino` nova.
+
+A migration **não** leva `server_default`: não existe etapa plausível para inventar num
+documento já assinado, e chutar uma seria falsificar registro. A coluna entra nula e vira
+`NOT NULL` no passo seguinte — se houver assinatura anterior ao fluxo, falha alto. Nenhuma pode
+existir, porque até o L5 não havia como assinar.
+
 ### Pendências abertas
 
 | # | Pendência | Loop de destino |
@@ -263,7 +312,10 @@ que a data volta do banco com fuso.
 | P16 | Evento de auditoria de login e de criação de PT não é gravado: a cadeia de hash só nasce no L6 | L6 |
 | P17 | `GET /pts` não pagina. Enquanto o escopo é uma unidade, cabe; entra com a busca estruturada | L8 |
 | ~~P18~~ | ~~Nenhuma regra de risco~~ — motor determinístico entregue e exposto em `/pts/{id}/pendencias` | resolvido no L4 |
-| P19 | O veredito do motor ainda não **impede** nada: falta a máquina de estados aplicá-lo | L5 |
+| ~~P19~~ | ~~Veredito do motor não impede nada~~ — entrada em `EM_EXECUCAO` exige risco limpo | resolvido no L5 |
+| P23 | Retomada de PT suspensa não gera assinatura, só evento de trilha. Se a operação exigir assinatura formal, é índice parcial ou tabela de eventos assinados | quando pedirem |
+| P24 | Não há verificador da cadeia de hash nem API de consulta da trilha; o evento compensatório também não existe | L6 |
+| P25 | `PTVersao` é gravada mas não exposta: falta endpoint de histórico e diff | L8 |
 | P20 | `documentos_obrigatorios` sempre acusa ausência enquanto o upload não existe. Correto, mas só deixa de ser ruído com o L7 | L7 |
 | P21 | Duração máxima e pares incompatíveis são constantes em `exigencias.py`. Se a operação quiser ajustar sem deploy, viram configuração | quando pedirem |
 | P22 | API aceita datetime sem fuso e o trata como UTC. Exigir offset explícito é decisão do contrato HTTP | L12/L13 |
@@ -274,23 +326,22 @@ L1 fechado e verificado: 20 testes passando, `alembic upgrade head` e `downgrade
 o seed roda duas vezes sem duplicar, `/health` continua 200. O clone do PC A precisou de `.venv`
 e `.env` próprios — nenhum dos dois vem do repositório.
 
-L4 fechado e verificado: 72 testes passando, motor rodando contra o banco de desenvolvimento e
-reprovando a PT existente com três bloqueios corretos, cada um com responsável.
+L5 fechado e verificado: 90 testes passando; no banco de desenvolvimento a `PT-2026-0002`
+percorreu o fluxo até `LIBERACAO` com quatro assinaturas de mesmo hash e quatro elos de trilha
+encadeados, e foi barrada na entrada em execução pela NR-35 vencida.
 
-Próximo passo: **L5 — Máquina de estados e fluxo de aprovação**. Tudo o que ele precisa já
-existe e está testado:
+Próximo passo: **L6 — Trilha de auditoria imutável**. Metade já existe: `app/audit/trilha.py`
+escreve a cadeia `H(anterior + payload)` a cada transição, e só faz INSERT. Falta:
 
-- `avaliar_pt(pt, concorrentes, agora)` dá o veredito; `bloqueiam(...)` diz se impede.
-  `pendencias_da_pt(db, pt)` já monta a chamada — a transição só precisa recusar quando houver
-  bloqueante, levantando `ConflitoDeNegocio`, que o handler converte em 409.
-- `validar_assinatura(pt, usuario, papel)` implementa a regra 8 e a correspondência
-  papel/perfil. Falta o L5 gravar a `Assinatura` (unique por pt+papel+versão já existe).
-- `PTVersao` espera o snapshot: a versão nasce quando a PT sai de `RASCUNHO`, e cada revisão
-  invalida as assinaturas da versão anterior.
+- **Verificador de integridade** — percorrer a cadeia de uma PT e apontar onde ela quebra. É o
+  teste obrigatório "audit chain detects tampering", que ainda não existe.
+- **API de consulta** (`/pts/{id}/trilha`), com o escopo da regra 5 aplicado na consulta.
+- **Evento compensatório**: `evento_compensado_id` está no modelo e nunca foi usado. Correção
+  é evento novo apontando para o original, jamais `UPDATE`.
+- Cobrir também os eventos que ainda não são registrados: login (P16) e criação de PT.
 
-Nenhuma transição pode ser pulada (regra 6), e cada uma exige ator, momento, contexto e hash do
-documento — o registro em `audit_event` é do L6, mas a transição precisa nascer já carregando
-esses dados, senão o L6 audita um passado que não foi guardado.
+Cuidado: hoje só transições geram evento. Se o L6 passar a registrar criação e edição, a
+cadeia de PTs antigas continua válida — ela é por PT e por ordem de inserção, não global.
 
 Lembretes que já custaram caro: todo modelo novo entra em `app/models/__init__.py`, senão o
 autogenerate o ignora; toda coluna de enum passa por `enum_col()`; nenhuma constraint nasce sem

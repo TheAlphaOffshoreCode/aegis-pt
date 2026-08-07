@@ -2,10 +2,11 @@
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.audit.trilha import Contexto
 from app.database import get_db
 from app.models.enums import EstadoPT, TipoTrabalho
 from app.models.permissao import ModeloPT, PermissaoTrabalho
@@ -17,9 +18,12 @@ from app.schemas.permissao import (
     PermissaoTrabalhoCreate,
     PermissaoTrabalhoRead,
     PermissaoTrabalhoUpdate,
+    TransicaoDisponivel,
+    TransicaoRequest,
 )
 from app.security.dependencias import exigir_perfis, usuario_atual
 from app.services import permissoes
+from app.services.transicoes import executar_transicao, transicoes_disponiveis
 
 router = APIRouter(prefix="/pts", tags=["permissões de trabalho"])
 
@@ -107,6 +111,40 @@ def pendencias(
         numero=pt.numero,
         liberavel=not bloqueiam(encontradas),
         pendencias=[p.como_dict() for p in encontradas],
+    )
+
+
+@router.get("/{pt_id}/transicoes", response_model=list[TransicaoDisponivel])
+def transicoes(
+    pt_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(usuario_atual),
+) -> list[dict]:
+    """Passos possíveis agora, e quais deles este usuário pode dar."""
+    return transicoes_disponiveis(_pt_no_escopo(db, pt_id, usuario), usuario)
+
+
+@router.post("/{pt_id}/transicoes", response_model=PermissaoTrabalhoRead)
+def transicionar(
+    pt_id: int,
+    dados: TransicaoRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    ator: Usuario = Depends(usuario_atual),
+) -> PermissaoTrabalho:
+    """Move a PT de estado, assinando e registrando na trilha."""
+    contexto = Contexto(
+        dispositivo=request.headers.get("user-agent"),
+        ip=None if request.client is None else request.client.host,
+        geolocalizacao=dados.geolocalizacao,
+    )
+    return executar_transicao(
+        db,
+        _pt_no_escopo(db, pt_id, ator),
+        dados.destino,
+        ator,
+        motivo=dados.motivo,
+        contexto=contexto,
     )
 
 

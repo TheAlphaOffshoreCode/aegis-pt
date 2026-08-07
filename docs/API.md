@@ -99,6 +99,53 @@ the permit is unreleasable, because seeing what is missing is how the requester 
 `liberavel` is false whenever any pendency is `bloqueante`; `atencao` informs without blocking.
 Enforcement of this verdict at the transition is L5 — this endpoint never changes state.
 
+### `GET /pts/{id}/transicoes` · `POST /pts/{id}/transicoes`
+
+The listing returns the steps available from the current state and whether **this** user may
+take each one — so the screen does not reimplement the state machine, and an authorization rule
+does not end up duplicated in a browser where it can drift.
+
+```json
+[ { "destino": "ANALISE_SMS", "papel": "area_responsavel", "assina": true, "permitida": false } ]
+```
+
+`POST` takes `{"destino": ..., "motivo": ..., "geolocalizacao": ...}` and returns the permit.
+`motivo` is required for `REJEITADA` and `SUSPENSA` — rejecting without saying why leaves
+nothing to correct, and it is the first record an incident investigation looks for.
+
+Device and IP come from the request itself, never from the body. Every transition writes an
+`audit_event` carrying actor, timestamp, context and document hash (rule 6).
+
+## The approval flow
+
+```text
+RASCUNHO → VALIDACAO → ANALISE_SMS → APROVACAO → LIBERACAO → EM_EXECUCAO → ENCERRADA → ARQUIVADA
+```
+
+| Step | Signs as | Notes |
+|---|---|---|
+| → `VALIDACAO` | `requisitante` | freezes a `pt_versao` snapshot |
+| → `ANALISE_SMS` | `area_responsavel` | |
+| → `APROVACAO` | `tecnico_seguranca` | |
+| → `LIBERACAO` | `coordenador` | |
+| → `EM_EXECUCAO` | `executante` | **requires the rule engine clean** |
+| → `ENCERRADA` | `executante` | |
+| → `ARQUIVADA` | `coordenador` | administrative, no signature |
+| → `REJEITADA` | role of the current step | `motivo` required; returns to `RASCUNHO` |
+| → `SUSPENSA` | `tecnico_seguranca` | only from `EM_EXECUCAO`, `motivo` required |
+
+Skipping a step is not a special case to reject — the step simply does not exist in the graph,
+so it fails like any undeclared transition would.
+
+**The document hash excludes `estado`.** A signature signs content, not position in the flow; if
+the hash changed on every transition, two signatures of the same version would differ and
+nothing could be checked afterwards. All signatures of one version share one hash.
+
+Signatures are unique per `(permit, step, version)` rather than per role: the same role signs
+different steps legitimately — the executant starts *and* closes the work. Suspending and
+resuming produce no signature at all, because they repeat within a version; they live in the
+trail, which carries the same actor, timestamp, context and hash.
+
 ## Business conflicts
 
 Every blocking pendency returns `409` with the structured list, produced by a single handler
@@ -119,6 +166,8 @@ Risk (L4): `janela_vencida`, `janela_excede_o_maximo`, `janela_menor_que_a_durac
 `equipe_vazia`, `certificacao_ausente`, `certificacao_vencida`, `certificacao_a_vencer`,
 `documento_ausente`, `documento_vencido`, `trabalhos_incompativeis`, `segregacao_de_funcoes`,
 `papel_incompativel_com_o_perfil`, `assinante_inativo`.
+
+Flow (L5): `transicao_invalida`, `motivo_obrigatorio`.
 
 `422` remains what it always was: the payload did not even parse. `409` means it parsed and
 the business refused it.

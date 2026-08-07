@@ -137,6 +137,17 @@ Deviations: `SUSPENSA` (only from `EM_EXECUCAO`) and `REJEITADA` (returns to `RA
 - **Rules in `app/rules/` take data and return pendencies — they never query.** The service
   loads what a rule needs (concurrent permits, for instance) and passes it in. That is what
   keeps each limit testable without building half the system around it.
+- **The document hash excludes `estado`.** A signature signs content, not position in the flow.
+  If the hash moved with the state, two signatures of the same version would not match and
+  nothing could be verified later.
+- **Signatures are unique per `(permit, step, version)`, not per role.** The same role signs
+  different steps on purpose — the executant starts and closes the work. Steps that repeat
+  within a version (suspend, resume) carry `assina=False` and live only in the trail.
+- **`app/audit/trilha.py` only ever INSERTs.** No code path updates or deletes an
+  `audit_event`; a correction is a new compensating event (rule 4).
+- **In tests, `db` and the request use different sessions.** After a `TestClient` call changed
+  something, call `db.expire_all()` — otherwise the test reads its own stale identity map and
+  fails for the wrong reason.
 
 ## Conventions
 

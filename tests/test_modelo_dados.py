@@ -19,6 +19,7 @@ from app.models import (
     Usuario,
 )
 from app.models.enums import (
+    EstadoPT,
     PapelAssinatura,
     PerfilUsuario,
     TipoCertificacao,
@@ -185,22 +186,31 @@ def test_pt_com_trilha_de_auditoria_nao_pode_ser_apagada(db: Session) -> None:
         db.commit()
 
 
-def test_assinatura_e_unica_por_papel_dentro_da_mesma_versao(db: Session) -> None:
-    """Revisar o documento invalida as assinaturas: a nova versão assina de novo, sem apagar."""
+def test_assinatura_e_unica_por_etapa_dentro_da_mesma_versao(db: Session) -> None:
+    """A unicidade é por etapa, não por papel.
+
+    O mesmo papel assina etapas diferentes de propósito — o executante inicia e encerra o
+    trabalho. O que não pode é a mesma etapa da mesma versão ser assinada duas vezes.
+    """
     pt = _pt_minima(db)
     dados = {
         "pt_id": pt.id,
         "usuario_id": pt.requisitante_id,
-        "papel": PapelAssinatura.REQUISITANTE,
+        "papel": PapelAssinatura.EXECUTANTE,
         "hash_documento": "b" * 64,
     }
-    db.add(Assinatura(**dados, versao_pt=1))
+    db.add(Assinatura(**dados, estado_destino=EstadoPT.EM_EXECUCAO, versao_pt=1))
     db.commit()
 
-    db.add(Assinatura(**dados, versao_pt=2))
-    db.commit()  # versão nova, assinatura nova
+    # Mesmo papel, mesma versão, outra etapa: legítimo.
+    db.add(Assinatura(**dados, estado_destino=EstadoPT.ENCERRADA, versao_pt=1))
+    db.commit()
 
-    db.add(Assinatura(**dados, versao_pt=2))
+    # Mesma etapa numa versão nova: legítimo, o documento mudou.
+    db.add(Assinatura(**dados, estado_destino=EstadoPT.EM_EXECUCAO, versao_pt=2))
+    db.commit()
+
+    db.add(Assinatura(**dados, estado_destino=EstadoPT.EM_EXECUCAO, versao_pt=2))
     with pytest.raises(IntegrityError):
         db.commit()
 

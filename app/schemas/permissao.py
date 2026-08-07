@@ -152,11 +152,30 @@ class AvaliacaoRead(BaseModel):
     pendencias: list[PendenciaRead]
 
 
+class TransicaoRequest(BaseModel):
+    """Pedido de mudança de estado. O destino é declarado; o caminho, a máquina é que conhece."""
+
+    destino: EstadoPT
+    motivo: str | None = Field(default=None, max_length=2000)
+    # O navegador informa; o servidor registra como veio, sem inventar quando falta.
+    geolocalizacao: str | None = Field(default=None, max_length=80)
+
+
+class TransicaoDisponivel(BaseModel):
+    """Um passo possível a partir do estado atual, e se este usuário pode dá-lo."""
+
+    destino: EstadoPT
+    papel: PapelAssinatura
+    assina: bool
+    permitida: bool
+
+
 class AssinaturaRead(ORMSchema):
     id: int
     pt_id: int
     usuario_id: int
     papel: PapelAssinatura
+    estado_destino: EstadoPT
     versao_pt: int
     hash_documento: str
     assinado_em: datetime

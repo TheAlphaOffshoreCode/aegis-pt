@@ -142,15 +142,19 @@ class Anexo(Base):
 
 
 class Assinatura(Base):
-    """Assinatura de um papel sobre uma *versão* da PT.
+    """Assinatura de uma *etapa* do fluxo sobre uma *versão* da PT.
 
-    A unicidade é por (pt, papel, versão): revisar o documento invalida as assinaturas
-    anteriores, e assinar de novo é evento novo, não atualização do antigo.
+    A unicidade é por (pt, etapa, versão), e não por papel: o mesmo papel assina etapas
+    diferentes legitimamente — o executante inicia e encerra o trabalho, o técnico de
+    segurança analisa e depois suspende. Revisar o documento gera versão nova, e as
+    assinaturas da versão anterior deixam de valer sem que nada seja apagado.
     """
 
     __tablename__ = "assinatura"
     __table_args__ = (
-        UniqueConstraint("pt_id", "papel", "versao_pt", name="uq_assinatura_pt_papel_versao_pt"),
+        UniqueConstraint(
+            "pt_id", "estado_destino", "versao_pt", name="uq_assinatura_pt_etapa_versao"
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -159,6 +163,8 @@ class Assinatura(Base):
     )
     usuario_id: Mapped[int] = mapped_column(ForeignKey("usuario.id"), index=True, nullable=False)
     papel: Mapped[PapelAssinatura] = mapped_column(enum_col(PapelAssinatura), nullable=False)
+    # A etapa que esta assinatura autorizou — o estado para o qual a PT foi.
+    estado_destino: Mapped[EstadoPT] = mapped_column(enum_col(EstadoPT), nullable=False)
     versao_pt: Mapped[int] = mapped_column(nullable=False)
     hash_documento: Mapped[str] = mapped_column(String(64), nullable=False)
     assinado_em: Mapped[datetime] = mapped_column(
