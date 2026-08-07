@@ -93,19 +93,24 @@ def test_anexo_e_gravado_com_hash_do_servidor_e_nome_gerado(
 
 
 @pytest.mark.parametrize(
-    "nome", ["../../etc/passwd.pdf", "..\\..\\windows\\system32\\sam.pdf", "sub/dir/apr.pdf"]
+    ("nome", "esperado"),
+    [
+        ("../../etc/passwd.pdf", "passwd.pdf"),
+        # Barra invertida precisa cair também no Linux, onde `Path` não a trata como
+        # separador — foi assim que a primeira versão passou aqui e quebrou no CI.
+        ("..\\..\\windows\\system32\\sam.pdf", "sam.pdf"),
+        ("sub/dir/apr.pdf", "apr.pdf"),
+        ("C:\\Users\\alguem\\aso.pdf", "aso.pdf"),
+    ],
 )
 def test_caminho_no_nome_enviado_vira_apenas_o_nome(
-    client: TestClient, cenario: dict, db: Session, nome: str
+    client: TestClient, cenario: dict, db: Session, nome: str, esperado: str
 ) -> None:
     """O nome é rótulo, mas rótulo com `../` acaba usado como caminho por alguém, algum dia."""
     resposta = _anexar(client, cenario, nome=nome)
 
     assert resposta.status_code == 201
-    guardado = db.scalars(select(Anexo)).one().nome_arquivo
-    assert "/" not in guardado
-    assert "\\" not in guardado
-    assert not guardado.startswith("..")
+    assert db.scalars(select(Anexo)).one().nome_arquivo == esperado
 
 
 @pytest.mark.parametrize(

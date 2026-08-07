@@ -387,6 +387,19 @@ ir. Registrado como P28.
   nome vindo do cliente é injeção esperando acontecer.
 - Limite de tamanho conferido **durante** a leitura, e arquivo parcial é apagado.
 
+### O defeito que só o CI pegou
+
+A primeira versão sanitizava o nome com `Path(nome).name`. **Passou em tudo no Windows e
+quebrou no CI**, porque no Linux o `Path` não trata `\` como separador — então
+`..\..\windows\system32\sam.pdf` chegava inteiro ao banco no servidor, e parecia limpo na
+máquina de desenvolvimento.
+
+Não era falha de teste: era a garantia anunciada valendo só no ambiente que não é o de
+produção. Corrigido com `PureWindowsPath`, que reconhece os dois separadores em qualquer
+sistema, e o teste passou a conferir o valor exato esperado em vez de só procurar caracteres.
+
+Fica como regra: **quem manda o nome é um cliente qualquer, não o sistema de arquivos local.**
+
 ### Pendências abertas
 
 | # | Pendência | Loop de destino |

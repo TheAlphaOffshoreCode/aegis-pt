@@ -166,6 +166,10 @@ Deviations: `SUSPENSA` (only from `EM_EXECUCAO`) and `REJEITADA` (returns to `RA
 - **`AEGIS_UPLOAD_DIR` must stay outside `static/`.** That directory is served as-is, so an
   upload landing there becomes public content.
 - **f-strings cannot reuse the outer quote character** — that is 3.12+, and CI runs 3.11.
+- **Sanitize client-supplied filenames with `PureWindowsPath`, never `Path`.** On Linux `Path`
+  does not treat `\` as a separator, so `..\..\sam.pdf` survives intact on the server while
+  looking sanitized on a Windows dev machine. `PureWindowsPath` handles both separators on
+  every platform. This one shipped and was caught by CI, not locally.
 
 ## Conventions
 

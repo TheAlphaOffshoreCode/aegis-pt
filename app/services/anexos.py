@@ -7,7 +7,7 @@ conteúdo. O nome enviado é guardado apenas como rótulo para exibição.
 import hashlib
 import shutil
 from datetime import date
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from uuid import uuid4
 
 from fastapi import UploadFile
@@ -37,8 +37,21 @@ BLOCO = 64 * 1024
 ESTADOS_QUE_ACEITAM_ANEXO = frozenset(set(EstadoPT) - {EstadoPT.ARQUIVADA})
 
 
+def so_o_nome(nome: str) -> str:
+    """Descarta qualquer diretório que venha no nome enviado.
+
+    `PureWindowsPath`, e não `Path`, de propósito: no Linux o `Path` **não** trata `\\` como
+    separador, então `..\\..\\sam.pdf` passaria inteiro no servidor e seria cortado só na
+    máquina Windows do desenvolvedor. `PureWindowsPath` reconhece os dois separadores em
+    qualquer sistema — quem envia o nome é um cliente qualquer, não o sistema de arquivos local.
+
+    O nome é apenas rótulo, mas rótulo com `../` acaba usado como caminho por alguém, um dia.
+    """
+    return PureWindowsPath(nome).name
+
+
 def _extensao_de(nome: str) -> str:
-    return Path(nome).suffix.lower()
+    return PureWindowsPath(nome).suffix.lower()
 
 
 def pasta_da_pt(pt: PermissaoTrabalho) -> Path:
@@ -127,9 +140,7 @@ def anexar(
     anexo = Anexo(
         pt_id=pt.id,
         tipo=tipo,
-        # `Path(...).name` descarta qualquer diretório que venha no nome enviado. Ele é só
-        # rótulo, mas rótulo com `../` acaba usado como caminho por alguém, algum dia.
-        nome_arquivo=Path(arquivo.filename or destino.name).name,
+        nome_arquivo=so_o_nome(arquivo.filename or destino.name),
         caminho=str(destino),
         hash_sha256=digest.hexdigest(),
         valido_ate=valido_ate,
