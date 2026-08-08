@@ -121,6 +121,28 @@ the CSP forbids one — **relax `script-src` and it becomes a defect.** And the 
 in-process: with more than one worker the effective limit multiplies, so the number is a floor,
 not a ceiling.
 
+Then a sweep looked for the opposite of what the audit had confirmed: not whether the design
+holds, but what the code does that the design never intended. **It found eight defects, none of
+which the 232-test suite caught** — four of them serious. The shared data cache was not scoped
+to a user, so on a shared deck tablet the next person to log in could read the previous one's
+permits offline. A queued offline edit went out with whatever token was active at flush time,
+which could record user A's correction in the trail **as authored by user B**. An alert
+condition that reappeared after being resolved crashed the sync with a `500`. And a genuine
+`500` lost every security header, because unhandled exceptions are served above all application
+middleware — the test that supposedly proved otherwise used a `401`, which travels through the
+stack. Testing the similar path is not testing the path.
+
+Nearly all of them sat in the same kind of place: **the seam between two mechanisms** — the
+service worker and the session, the error handler and the middleware stack, configuration and
+the static mount, the queue and identity. Tests written per mechanism pass individually while
+the join between them leaks. Worth knowing where to look next time.
+
+One fix turned out worse than the defect it replaced, and only surfaced because the fix itself
+was measured rather than assumed: the first rate-limiter repair swept expired keys by dictionary
+size, which with many live keys means a full pass per request that frees nothing — trading
+memory exhaustion for CPU exhaustion, which arrives sooner. Every one of the eight now has a
+regression test, each verified to fail when its fix is reverted.
+
 **What is still missing:** ingestion of the paper archive with OCR (proposed as its own loop —
 what it actually needs is a bulk import flow, not an OCR call), one crontab line calling
 `POST /alertas/sincronizar` on a schedule, and two product decisions listed in `LOOP_STATE.md`.
@@ -275,6 +297,9 @@ that fail loudly the day a guarantee quietly stops holding:
   alert whose condition disappears is marked resolved rather than deleted;
 - **an edit made offline never overwrites a change that arrived first** — the late write is
   refused, the earlier correction survives, and reloading is the way forward;
+- an alert condition that disappears and comes back **reopens the same row** instead of
+  crashing on the uniqueness of alert identity, and a real unhandled exception still carries
+  every security header;
 - SQLite foreign keys are actually enforced, and the migration is compared against the models
   and then rolled all the way back.
 
