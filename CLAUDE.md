@@ -187,6 +187,22 @@ Deviations: `SUSPENSA` (only from `EM_EXECUCAO`) and `REJEITADA` (returns to `RA
 - **Check `stop_reason == "refusal"` before touching `content`.** On a refusal the content
   comes back empty or partial, and code that assumes a text block raises there instead of
   answering.
+- **A PT cannot be born incomplete.** `validar_respostas` runs in `criar_pt` and
+  `atualizar_pt`, not in `avaliar_pt` — form completeness is an invariant of the write
+  boundary, and the rule engine never re-checks it. So relaxing creation would let an
+  incomplete permit walk the whole flow with nothing to stop it. That is why `/ai/rascunho`
+  takes `respostas` in the request instead of leaving them for later.
+- **The audit event-type catalogue is open; the payload format is not.** A new kind of event
+  (`pt.criada_por_ia`) is a new *value* for `tipo_evento`, which the payload already carries —
+  no `VERSAO_PAYLOAD` bump, no retroactive invalidation. Reach for a new event type before
+  reaching for a new payload field.
+- **`output_config` carries both `effort` and `format`.** Structured output and tool use work
+  in the same request: the model calls tools mid-conversation and the *final* answer is bound
+  to the schema. Every object in that schema needs `additionalProperties: false`, and
+  recursive schemas and numeric bounds are not supported.
+- **Validate the model's structured output again on arrival.** The schema constrains shape,
+  not meaning — a `tipo_trabalho` outside `TipoTrabalho` still comes back as a valid string.
+  Pydantic re-validation is what turns that into a refusal instead of a broken permit.
 
 ## Conventions
 

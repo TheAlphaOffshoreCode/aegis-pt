@@ -229,6 +229,41 @@ The suite never reaches the network: `tests/conftest.py` sets the key to empty o
 key in the developer's `.env` would otherwise make the tests call out and bill), and the agent
 takes an injected client.
 
+## Draft generation (L10)
+
+The same confinement, extended to a path that writes — and the write is the interesting part.
+
+**The model still cannot act.** `POST /ai/rascunho` creates a permit in `RASCUNHO` through
+`permissoes.criar_pt`, the same call the `POST /pts` route makes: same validation, same
+numbering, same trail, same signature chain ahead of it. There is no AI-only shortcut and no
+step is skipped. The tools the model reaches remain the three read-only ones from L9 — the
+creation happens in the service after the model has finished and its output has been
+validated, not through anything the model can call.
+
+**The model writes no safety number, and never sees one.** The proposal schema has exactly
+five fields — work type, description, hazards, controls, justification — with
+`additionalProperties: false`, so there is no shape in which a form answer could come back.
+Measurements, the validity window, the unit and the area travel in the request from the
+person, are passed through untouched, and are never included in what the model reads. A test
+asserts both halves: the stored answers equal what the caller sent, and none of their values
+appear anywhere in the request sent to the API.
+
+**Provenance survives.** The trail records `pt.criada_por_ia` instead of `pt.criada`. This
+rides the open event-type catalogue rather than the payload, so nothing about the frozen hash
+format changed and no version bump was needed — an AI-drafted permit stays identifiable for
+the life of the document, including in an incident investigation years later.
+
+**The proposal is validated before it is trusted.** The structured-output schema constrains
+the shape; Pydantic then re-validates it, which is what catches a work type outside the
+domain. Anything unusable raises before a permit exists — `502`, nothing written.
+
+A note on where the line landed: a draft cannot be born incomplete, because required-field
+validation lives at the write boundary rather than in the rule engine. That is why the
+measurements arrive with the request instead of being filled in later. It is a real
+constraint on the flow, declared below rather than worked around — and working around it for
+the AI path specifically would have given the model a route through validation that a person
+does not have.
+
 Two exposures remain open and are declared rather than assumed away:
 
 - **Prompt injection through permit content.** A requisitante writes the description, and that

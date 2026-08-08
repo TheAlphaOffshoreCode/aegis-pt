@@ -12,8 +12,8 @@ audit trail that survives an incident investigation.
 
 [![CI](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml/badge.svg)](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Status: L9 of L13](https://img.shields.io/badge/status-L9_of_L13-f59e0b.svg)](#roadmap)
-[![Tests: 153](https://img.shields.io/badge/tests-153_passing-22c55e.svg)](#tests)
+[![Status: L10 of L13](https://img.shields.io/badge/status-L10_of_L13-f59e0b.svg)](#roadmap)
+[![Tests: 169](https://img.shields.io/badge/tests-169_passing-22c55e.svg)](#tests)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Offline capable](https://img.shields.io/badge/PWA-offline_planned-0ea5e9.svg)](#offshore-constraints)
 
@@ -23,7 +23,7 @@ audit trail that survives an incident investigation.
 
 ## Current state — read this before cloning
 
-**L0 through L9 are done, and the permit cycle actually closes.** A permit is opened from a
+**L0 through L10 are done, and the permit cycle actually closes.** A permit is opened from a
 form defined per work type, collects its documents, walks the approval chain gathering a
 signature at each step, gets checked by a deterministic rule engine before release, leaves a
 hash-chained trail that detects tampering, and can be pulled back out as a single dossier —
@@ -64,10 +64,24 @@ unit retrieves nothing — the scope enters the query before the model sees a si
 of those are covered by tests that run without a network or an API key; the round trip to
 Anthropic itself is exercised the moment a key is configured.
 
+Since L10 it also drafts. `POST /ai/rascunho` takes a sentence — *"preciso soldar um suporte
+de tubulação no convés principal"* — and returns a permit in `RASCUNHO` with the work type
+identified, the hazards and controls written from what this unit actually did before, and the
+sources cited. What makes it safe is the division of labour, which is the API contract rather
+than a convention: **every measurement and every deadline arrives in the request, from a
+person, and is never shown to the model.** A gas reading comes off a calibrated detector.
+There is nothing for a language model to contribute to it, and a plausible-looking number
+there is the exact failure this is built to prevent.
+
+The permit is then created by the same service call as any other — same validation, same
+numbering, same trail, same signature chain ahead of it. Proposing is not approving. The
+trail records it as `pt.criada_por_ia`, so an AI-drafted permit stays identifiable years
+later, in the investigation where it matters.
+
 **What is still missing:** ingestion of the paper archive with OCR (proposed as its own loop —
-what it actually needs is a bulk import flow, not an OCR call), AI draft generation (L10),
-indicators and alerts (L11), the offline PWA (L12) and the closing security audit (L13). The
-interface is still a diagnostic shell — this is a working API, not a finished product.
+what it actually needs is a bulk import flow, not an OCR call), indicators and alerts (L11),
+the offline PWA (L12) and the closing security audit (L13). The interface is still a
+diagnostic shell — this is a working API, not a finished product.
 
 ## The problem
 
@@ -185,7 +199,7 @@ way to create accounts with a known password.
 python -m pytest -q
 ```
 
-A hundred and fifty-three tests, none of which reach the network — the AI loop is exercised
+A hundred and sixty-nine tests, none of which reach the network — the AI loop is exercised
 with an injected client, and the suite forces the API key empty so a key sitting in a
 developer's `.env` cannot make the tests call out and bill. The ones worth naming are those
 that fail loudly the day a guarantee quietly stops holding:
@@ -210,6 +224,9 @@ that fail loudly the day a guarantee quietly stops holding:
 - the same scripted conversation run as two users on different units retrieves different
   permits, and the AI tool set itself is asserted, so a fourth tool fails the suite until
   someone has proven it only reads;
+- an AI-drafted permit stores the gas reading exactly as the caller sent it, and that value
+  appears nowhere in the request sent to the model — the proposal schema has no field it
+  could come back in;
 - SQLite foreign keys are actually enforced, and the migration is compared against the models
   and then rolled all the way back.
 
@@ -241,15 +258,16 @@ also how CI runs them, on 3.11 and 3.14.
 | `POST` · `GET` · `DELETE` | `/pts/{id}/anexos` | Documents, hashed server-side on upload |
 | `GET` | `/pts/{id}/anexos/{id}/conteudo` | Download, always `attachment` + `nosniff` |
 | `POST` | `/ai/consulta` | Natural-language question, answered with the permits it read |
+| `POST` | `/ai/rascunho` | Drafts a permit from a description; measurements come from you |
 | `GET` | `/` · `/static/{path}` | PWA shell and vendored assets |
 
 A blocking pendency returns `409` with a structured list — `codigo`, `severidade`, `mensagem`,
 `campo`, `responsavel` — never a bare sentence, because the screen needs to know which field to
 mark and who is expected to resolve it. `422` still means the payload did not parse at all.
 
-Still scheduled: AI draft generation at L10, indicators and alerts at L11, offline sync at L12.
+Still scheduled: indicators and alerts at L11, offline sync at L12.
 
-`/ai/consulta` answers `503` when no API key is configured. The AI degrades on its own; the
+The `/ai/*` routes answer `503` when no API key is configured. The AI degrades on its own; the
 rest of the application starts and works without it.
 
 ## Roadmap
@@ -299,9 +317,15 @@ API key is read in the backend only, and its absence takes down the AI routes al
 its own loop rather than an appendix: what it needs is the import flow, and the OCR call is the
 small part. After L9 it lands as one more read-only tool.
 
-**L10 — draft generation.** The assistant proposes a permit, and the proposal is a draft like
-any other — subject to the rule engine and the full signature chain. Proposing is not
-approving, and rule 1 does not bend for convenience.
+**L10 — done.** Draft generation. The assistant writes the *text* of a permit — work type,
+description, hazards, controls — and fills in no form field at all: those are measurements and
+attestations, taken with an instrument by someone who walked there. The proposal schema has
+five fields and `additionalProperties: false`, so there is no shape in which a gas reading
+could come back from the model. The draft is then created like any other, and the trail
+records that an AI wrote it. Proposing is not approving, and rule 1 did not bend for
+convenience — when the first design collided with the rule that a permit cannot be created
+incomplete, the fix was to make the division of labour explicit in the contract, not to give
+the AI a way around validation that a person doesn't have.
 
 **L11–L13 — operation.** Indicators and escalating alerts, the offline PWA with conflict
 resolution, and a closing security audit — which includes prompt-injection review of every

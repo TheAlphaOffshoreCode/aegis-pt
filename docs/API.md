@@ -250,6 +250,46 @@ scope answers as non-existent rather than as forbidden.
 `503` when `AEGIS_ANTHROPIC_API_KEY` is absent — the AI routes fail alone, the rest of the
 application starts and works normally.
 
+### `POST /ai/rascunho`
+
+Opens a permit in `RASCUNHO` from a free-text description of the job.
+
+```json
+{ "descricao_livre": "preciso soldar um suporte de tubulação no convés principal",
+  "unidade_id": 1, "area_id": 2,
+  "valida_de": "2026-08-08T08:00:00Z", "valida_ate": "2026-08-08T16:00:00Z",
+  "respostas": { "teste_de_gases_lie": 0.8, "vigia_de_fogo": "Carlos Nunes" } }
+```
+
+**The division of labour is the contract, not a convention.** Everything that is a
+measurement or a deadline arrives in the request, from a person: the validity window, the
+unit, the area, and every `respostas` field. The model returns the rest — work type,
+description, hazards and controls — and never sees the measurements at all. A gas reading
+comes off a calibrated detector; there is nothing for a language model to contribute to it,
+and a plausible-looking number here is precisely the failure this endpoint is built to
+prevent.
+
+```json
+{ "pt": { "numero": "PT-2026-0003", "estado": "RASCUNHO", "versao": 1, "...": "..." },
+  "justificativa": "Baseado na PT-2026-0001, mesmo serviço no mesmo convés.",
+  "fontes": ["PT-2026-0001"],
+  "pendencias": [ { "codigo": "equipe_vazia", "severidade": "bloqueante", "...": "..." } ] }
+```
+
+The permit is created through the same service call as any other — same validation, same
+numbering, same trail, same signature chain ahead of it. **Proposing is not approving**: the
+draft is a draft, and no step is skipped for it. `pendencias` is the rule engine's verdict,
+the same one that will block release later, not a list the model wrote.
+
+The trail records it as `pt.criada_por_ia` rather than `pt.criada`, so an AI-drafted permit
+stays distinguishable for the life of the document. The payload format is unchanged — the
+event-type catalogue is open by design (L6), so no version bump was needed.
+
+Because the model chooses the work type, the `respostas` sent may not match the form for the
+type it picked. That returns the ordinary `409` with the exact missing fields — no permit is
+created — and `GET /pts/modelos/{tipo}` gives the form. `502` means the model itself failed
+(refused, ran out of steps, or returned something outside the schema); `503` means no API key.
+
 ## Business conflicts
 
 Every blocking pendency returns `409` with the structured list, produced by a single handler
@@ -298,6 +338,5 @@ removes the need it was solving. Revisit if shifts stop fitting in one token.
 
 | Loop | Endpoints |
 |---|---|
-| L10 | `/ai/rascunho` |
 | L11 | `/indicadores/*`, `/alertas` |
 | L12 | offline sync |

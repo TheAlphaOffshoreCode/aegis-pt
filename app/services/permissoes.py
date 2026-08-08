@@ -148,8 +148,14 @@ def criar_pt(
     dados: PermissaoTrabalhoCreate,
     autor: Usuario,
     contexto: Contexto = Contexto(),
+    tipo_evento: str = "pt.criada",
 ) -> PermissaoTrabalho:
-    """Cria a PT em `RASCUNHO`. Número, estado, versão e requisitante são do servidor."""
+    """Cria a PT em `RASCUNHO`. Número, estado, versão e requisitante são do servidor.
+
+    `tipo_evento` muda só o nome do evento na trilha — é assim que um rascunho proposto pela
+    IA fica distinguível para sempre (`pt.criada_por_ia`) sem alterar o formato do payload,
+    que é contrato congelado. O catálogo de tipos é aberto por decisão do L6.
+    """
     pendencias = _validar_lotacao(dados.unidade_id, autor)
     estrutura, modelo = _validar_estrutura(db, dados, dados.unidade_id)
     pendencias += estrutura
@@ -191,7 +197,7 @@ def criar_pt(
         registrar_evento(
             db,
             pt=pt,
-            tipo_evento="pt.criada",
+            tipo_evento=tipo_evento,
             ator=autor,
             hash_documento=hash_do_documento(pt),
             estado_destino=EstadoPT.RASCUNHO,

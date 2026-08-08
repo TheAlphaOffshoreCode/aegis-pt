@@ -49,6 +49,22 @@ class ClienteClaude(Protocol):
 
 
 @dataclass
+class Turno:
+    """O que sobrou de uma conversa inteira com o modelo.
+
+    `parada` diz por que ela terminou: `ok` chegou ao fim, `recusa` foi barrada pelos
+    classificadores, `limite` gastou as iterações sem concluir.
+    """
+
+    texto: str
+    fontes: list[str] = field(default_factory=list)
+    iteracoes: int = 0
+    tokens_entrada: int = 0
+    tokens_saida: int = 0
+    parada: str = "ok"
+
+
+@dataclass
 class Resposta:
     texto: str
     fontes: list[str] = field(default_factory=list)
@@ -71,14 +87,26 @@ def construir_cliente() -> ClienteClaude:
     return anthropic.Anthropic(api_key=chave)
 
 
-def responder(
-    db: Session, usuario: Usuario, pergunta: str, cliente: ClienteClaude | None = None
-) -> Resposta:
-    """Responde uma pergunta em linguagem natural sobre as PTs que o usuário alcança."""
-    configuracao = get_settings()
-    cliente = cliente or construir_cliente()
+def conversar(
+    db: Session,
+    usuario: Usuario,
+    sistema: str,
+    pedido: str,
+    cliente: ClienteClaude,
+    formato: dict | None = None,
+) -> Turno:
+    """Roda a conversa até o modelo parar de pedir ferramentas.
 
-    mensagens: list[dict] = [{"role": "user", "content": pergunta}]
+    Compartilhado pela consulta (L9) e pela proposta de rascunho (L10): as duas precisam do
+    mesmo escopo aplicado antes da chamada e da mesma coleta de fontes. `formato` prende a
+    resposta final a um schema JSON — as ferramentas continuam funcionando no meio do caminho.
+    """
+    configuracao = get_settings()
+    saida_config: dict = {"effort": configuracao.ai_esforco}
+    if formato is not None:
+        saida_config["format"] = formato
+
+    mensagens: list[dict] = [{"role": "user", "content": pedido}]
     fontes: list[str] = []
     entrada = saida = 0
 
@@ -87,8 +115,8 @@ def responder(
             model=configuracao.ai_modelo,
             # Folga porque o raciocínio adaptativo do Opus 5 divide este teto com a resposta.
             max_tokens=configuracao.ai_max_tokens,
-            output_config={"effort": configuracao.ai_esforco},
-            system=INSTRUCOES,
+            output_config=saida_config,
+            system=sistema,
             tools=ferramentas.DEFINICOES,
             messages=mensagens,
         )
@@ -98,16 +126,11 @@ def responder(
 
         # Conferido antes de ler `content`: numa recusa o conteúdo vem vazio ou parcial.
         if resposta.stop_reason == "refusal":
-            return Resposta(
-                texto="Não posso responder a essa pergunta.",
-                iteracoes=iteracao,
-                tokens_entrada=entrada,
-                tokens_saida=saida,
-            )
+            return Turno("", fontes, iteracao, entrada, saida, parada="recusa")
 
         if resposta.stop_reason != "tool_use":
             texto = "".join(b.text for b in resposta.content if b.type == "text").strip()
-            return _com_fontes(texto, fontes, iteracao, entrada, saida)
+            return Turno(texto, fontes, iteracao, entrada, saida)
 
         # O turno inteiro volta para o histórico, blocos de raciocínio inclusive: editar o
         # conteúdo do assistente quebra a continuidade da conversa.
@@ -126,13 +149,34 @@ def responder(
         # ferramentas em paralelo.
         mensagens.append({"role": "user", "content": resultados})
 
+    return Turno("", fontes, configuracao.ai_max_iteracoes, entrada, saida, parada="limite")
+
+
+def responder(
+    db: Session, usuario: Usuario, pergunta: str, cliente: ClienteClaude | None = None
+) -> Resposta:
+    """Responde uma pergunta em linguagem natural sobre as PTs que o usuário alcança."""
+    turno = conversar(db, usuario, INSTRUCOES, pergunta, cliente or construir_cliente())
+
+    if turno.parada == "recusa":
+        return Resposta(
+            "Não posso responder a essa pergunta.",
+            [],
+            turno.iteracoes,
+            turno.tokens_entrada,
+            turno.tokens_saida,
+        )
+    if turno.parada == "limite":
+        return _com_fontes(
+            "A consulta não se resolveu no número de passos disponível. Refaça a pergunta de "
+            "forma mais específica.",
+            turno.fontes,
+            turno.iteracoes,
+            turno.tokens_entrada,
+            turno.tokens_saida,
+        )
     return _com_fontes(
-        "A consulta não se resolveu no número de passos disponível. Refaça a pergunta de "
-        "forma mais específica.",
-        fontes,
-        configuracao.ai_max_iteracoes,
-        entrada,
-        saida,
+        turno.texto, turno.fontes, turno.iteracoes, turno.tokens_entrada, turno.tokens_saida
     )
 
 

@@ -15,7 +15,7 @@ Fonte de verdade para retomar o trabalho. Atualizado ao fim de cada loop.
 | L8 | Busca estruturada e dossiê | ✅ concluído | 2026-08-07 |
 | L8.5 | Acervo legado e OCR | ⏳ proposto, adiado — o L9 veio antes | — |
 | L9 | IA: busca em linguagem natural | ✅ concluído | 2026-08-07 |
-| L10 | IA: geração de rascunho | — | — |
+| L10 | IA: geração de rascunho | ✅ concluído | 2026-08-08 |
 | L11 | Indicadores e alertas | — | — |
 | L12 | PWA e operação offline | — | — |
 | L13 | Auditoria de segurança e fechamento | — | — |
@@ -488,6 +488,63 @@ no ar sem chave, `/ai/consulta` responde 503 e `/pts` continua servindo normalme
 - **O acervo legado (L8.5) continua fora.** O L9 se sustenta sobre o acervo digital que já
   existe; quando o OCR entrar, vira mais uma ferramenta, sem retrabalho no laço.
 
+---
+
+## L10 — IA: geração de rascunho (2026-08-08)
+
+**Entregue:** `POST /ai/rascunho` — a IA lê uma descrição em texto livre, consulta PTs
+parecidas e propõe tipo de trabalho, descrição, perigos e controles; a PT nasce em `RASCUNHO`
+pelo caminho normal de criação.
+**Aceite:** 169 testes passando (16 novos), suíte inteira sem rede nem chave. Com a aplicação
+no ar sem chave, `/ai/rascunho` responde 503 e `/pts` continua servindo.
+
+### Arquivos tocados
+
+| Arquivo | Papel |
+|---|---|
+| `app/ai/rascunho.py` | schema da proposta, instruções e criação da PT |
+| `app/ai/agente.py` | `conversar()` extraído: o laço do L9 virou compartilhado, não copiado |
+| `app/schemas/ai.py`, `app/routers/ai.py` | `RascunhoRequest`/`RascunhoResponse` e `POST /ai/rascunho` |
+| `app/services/permissoes.py` | `criar_pt` recebe `tipo_evento` (padrão inalterado) |
+| `tests/test_ia_rascunho.py` | 16 testes |
+
+### Onde a linha foi traçada, e por quê
+
+A IA escreve **texto**: tipo de trabalho, descrição, perigos, controles. Ela não preenche
+campo de formulário nenhum, e essa é a decisão central do loop. Os campos do modelo são
+medição e atestado — `teste_de_gases_lie` sai de um detector calibrado, `altura_metros` de
+uma trena, `area_isolada` de alguém que foi lá olhar. Um número plausível aqui é exatamente o
+modo de falhar que a regra 2 existe para impedir.
+
+O schema da proposta tem cinco campos e `additionalProperties: false`: **não existe forma de o
+modelo devolver uma resposta de formulário**. Um teste fixa esse conjunto.
+
+- **A medição entra pelo pedido e o modelo nunca a vê.** Um teste confere as duas metades: as
+  respostas gravadas são as que o cliente mandou, e nenhum dos valores aparece no que foi
+  enviado à API.
+- **A PT nasce pelo mesmo `criar_pt` de sempre** — mesma validação, numeração, trilha e fluxo
+  de assinatura pela frente. Propor não é aprovar (regra 1), e não há atalho.
+- **A trilha marca `pt.criada_por_ia`.** Rodou no catálogo aberto de tipos de evento, não no
+  payload: nenhum bump de `VERSAO_PAYLOAD`, nenhuma cadeia invalidada, e um rascunho proposto
+  por IA fica identificável enquanto o documento existir.
+- **A proposta é revalidada na chegada.** O schema prende a forma, não o significado: um
+  `tipo_trabalho` fora do domínio volta como string válida. O Pydantic é o que transforma isso
+  em recusa (502) em vez de PT quebrada.
+
+### A colisão que valeu a pena parar para entender
+
+O primeiro desenho tentou criar a PT com `respostas={}` — e `criar_pt` barrou, porque
+`validar_respostas` roda na escrita. A tentação era afrouxar a criação "só para a IA".
+
+Seria um buraco: `avaliar_pt` **não** cobre completude de formulário, então um rascunho
+incompleto andaria o fluxo inteiro sem nada barrar. E abrir uma exceção para a IA daria ao
+modelo um caminho por dentro da validação que uma pessoa não tem — o oposto da regra 1.
+
+A saída foi tornar a divisão de trabalho explícita no contrato: medição e prazo entram pelo
+pedido, texto vem do modelo. Como o tipo é escolhido pela IA, as respostas enviadas podem não
+servir para ele — e aí volta o mesmo `409` com a lista de campos que faltam que qualquer PT
+receberia, sem criar nada. Tem teste.
+
 ### Pendências abertas
 
 | # | Pendência | Loop de destino |
@@ -528,6 +585,9 @@ no ar sem chave, `/ai/consulta` responde 503 e `/pts` continua servindo normalme
 | P34 | `/ai/consulta` sem limite de uso: cada consulta custa tokens e qualquer usuário autenticado repete à vontade. Limitado por consulta (6 iterações, 8000 tokens), não por pessoa | L13, junto com P14 |
 | P35 | A consulta por IA não entra na trilha. Quem perguntou o quê pode ser registro que a auditoria vai querer — esbarra em P26 (evento sem PT não tem cadeia) | L13 |
 | P36 | Fallback de modelo (beta) não implementado: numa recusa ou indisponibilidade, a consulta falha em vez de tentar outro modelo. Deliberado — trocar quem responde sobre segurança é decisão do William | quando o William decidir |
+| P37 | **Rascunho não pode nascer incompleto.** `validar_respostas` vive na escrita (`criar_pt`/`atualizar_pt`), não em `avaliar_pt` — por isso a medição entra junto com o pedido. Se a operação quiser abrir a PT *antes* de medir, a completude precisa migrar para o motor de regras e passar a barrar a transição, não a criação | decisão de produto |
+| P38 | Perigo e controle são duas listas de frases (`[{"descricao": ...}]`), sem vínculo entre si. Amarrar cada controle ao perigo que ele mitiga é o que uma tela de análise vai querer | L11/L12 |
+| P39 | `/ai/rascunho` custa tokens e cria PT a cada chamada: sem limite de uso, um laço enche o acervo de rascunhos. Vale junto com o rate limit da P34 | L13 |
 
 ### Ponto exato de retomada
 
@@ -550,12 +610,16 @@ do banco de desenvolvimento — a IA cai sozinha, sem levar o resto junto.
 curl -X POST http://127.0.0.1:8000/ai/consulta -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{\"pergunta\":\"Quais PTs estao abertas?\"}'
 ```
 
+L10 fechado e verificado: 169 testes passando, nenhum saindo para a rede. Com a aplicação no
+ar e sem chave, `/ai/rascunho` responde 503 e `/pts` segue devolvendo as 2 PTs do banco de
+desenvolvimento.
+
 Próximo passo: **decisão do William entre dois caminhos.**
 
-**L10 — IA: geração de rascunho.** A continuação natural: a IA propõe um rascunho de PT a
-partir de uma descrição, e o rascunho nasce como rascunho — sujeito ao motor de regras e ao
-mesmo fluxo de assinatura de qualquer outro. A regra 1 continua valendo inteira: propor não é
-aprovar. Reaproveita o laço, o escopo e a coleta de fontes do L9.
+**L11 — Indicadores e alertas.** A sequência natural do roadmap: painel de indicadores e
+alertas com escalonamento (certificação a vencer, PT parada, janela estourando). É onde a
+`AlertaRead` da P11 finalmente ganha consumidor, e onde a P27 (verificador percorrendo a
+cadeia inteira a cada consulta) começa a doer de verdade.
 
 **L8.5 — Acervo legado e OCR** (ainda proposto). Escopo próprio: modelo `documento_legado`,
 upload em lote, OCR com Tesseract, indexação do texto extraído e vínculo opcional com PT. Traz
