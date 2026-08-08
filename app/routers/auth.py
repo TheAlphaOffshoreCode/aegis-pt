@@ -1,6 +1,6 @@
 """Login e sessão. Só parse, autorização e delegação — nenhuma regra de negócio aqui."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,13 +15,24 @@ from app.security.credenciais import (
     verificar_senha,
 )
 from app.security.dependencias import unidades_visiveis, usuario_atual
+from app.security.limite import LOGIN, chave_do_pedido
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(dados: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
+def login(
+    dados: LoginRequest, request: Request, db: Session = Depends(get_db)
+) -> TokenResponse:
     """Troca matrícula e senha por um token de sessão."""
+    # Por origem e por matrícula: só por IP puniria a unidade inteira atrás de um NAT, e só
+    # por matrícula deixaria alguém varrer contas diferentes da mesma origem.
+    chave = chave_do_pedido(
+        None if request.client is None else request.client.host, dados.matricula
+    )
+    LOGIN.exigir(chave)
+    LOGIN.registrar(chave)
+
     usuario = db.scalars(select(Usuario).where(Usuario.matricula == dados.matricula)).first()
 
     if usuario is None:
@@ -34,6 +45,9 @@ def login(dados: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
         # Mensagem única de propósito: dizer "usuário inativo" já é informação demais.
         raise _credencial_invalida()
 
+    # Só o acerto zera a contagem: erro seguido de acerto não deveria abrir a porta para uma
+    # nova rajada de tentativas.
+    LOGIN.liberar(chave)
     usuario.ultimo_acesso = agora_utc()
     db.commit()
 

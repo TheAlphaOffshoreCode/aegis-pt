@@ -11,6 +11,9 @@ that OpenAPI cannot express.
 - Timestamps are ISO 8601 with timezone.
 - Errors return `{"detail": ...}`. Business conflicts (blocking pendency, invalid state
   transition) return `409` with the structured pendency list, never a bare message.
+- `429` carries `Retry-After` in seconds. Login is limited to 5 attempts per minute and the
+  AI routes to 20, both keyed by origin **and** identity.
+- Every response carries the security headers, error responses included.
 
 ## Endpoints
 
@@ -145,7 +148,11 @@ does not end up duplicated in a browser where it can drift.
 [ { "destino": "ANALISE_SMS", "papel": "area_responsavel", "assina": true, "permitida": false } ]
 ```
 
-`POST` takes `{"destino": ..., "motivo": ..., "geolocalizacao": ...}` and returns the permit.
+`POST` takes `{"destino": ..., "visto_em": ..., "motivo": ..., "geolocalizacao": ...}` and
+returns the permit. `visto_em` is **optional** here, unlike on edit: it does not prevent an
+overwrite, it prevents a signature standing for a document that changed after it was read
+(`409 documento_alterado`). A client that omits it keeps working; one that sends it gets the
+check.
 `motivo` is required for `REJEITADA` and `SUSPENSA` — rejecting without saying why leaves
 nothing to correct, and it is the first record an incident investigation looks for.
 
@@ -371,6 +378,8 @@ Flow (L5): `transicao_invalida`, `motivo_obrigatorio`.
 Trail (L6): `evento_inexistente`, `compensacao_de_compensacao`.
 
 Offline sync (L12): `edicao_desatualizada`.
+
+Hardening (L13): `conteudo_nao_confere`, `documento_alterado`.
 
 Attachments (L7): `extensao_nao_permitida`, `arquivo_vazio`, `arquivo_muito_grande`,
 `pt_arquivada`, `anexo_nao_removivel`, `anexo_fora_da_area`.

@@ -200,9 +200,16 @@ class DossieRead(BaseModel):
 
 
 class TransicaoRequest(BaseModel):
-    """Pedido de mudança de estado. O destino é declarado; o caminho, a máquina é que conhece."""
+    """Pedido de mudança de estado. O destino é declarado; o caminho, a máquina é que conhece.
+
+    `visto_em` é o `atualizado_em` que o cliente leu antes de assinar. Opcional, ao contrário
+    do que acontece na edição, e a diferença é deliberada: aqui ele não impede sobrescrita —
+    impede **assinar um documento que mudou depois de você lê-lo**. Cliente antigo que não o
+    envia continua funcionando; o que o envia ganha a conferência.
+    """
 
     destino: EstadoPT
+    visto_em: datetime | None = None
     motivo: str | None = Field(default=None, max_length=2000)
     # O navegador informa; o servidor registra como veio, sem inventar quando falta.
     geolocalizacao: str | None = Field(default=None, max_length=80)

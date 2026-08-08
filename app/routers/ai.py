@@ -14,6 +14,7 @@ from app.schemas.ai import (
     RascunhoResponse,
 )
 from app.security.dependencias import usuario_atual
+from app.security.limite import IA, chave_do_pedido
 
 router = APIRouter(prefix="/ai", tags=["ia"])
 
@@ -23,6 +24,7 @@ SEM_CHAVE = "Consulta por IA indisponível: chave da Claude API não configurada
 @router.post("/consulta", response_model=ConsultaResponse)
 def consulta(
     dados: ConsultaRequest,
+    request: Request,
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(usuario_atual),
 ) -> ConsultaResponse:
@@ -31,6 +33,7 @@ def consulta(
     O escopo de quem pergunta entra nas ferramentas antes da chamada ao modelo, e as fontes
     saem do que o banco devolveu — não do que a resposta afirma ter consultado.
     """
+    _limitar(request, usuario)
     try:
         resultado = agente.responder(db, usuario, dados.pergunta)
     except agente.IAIndisponivel:
@@ -58,6 +61,7 @@ def propor_rascunho(
     trilha e o mesmo fluxo de assinatura pela frente. Propor não é aprovar — o que a IA
     escreve é texto, e o formulário continua sendo preenchido a bordo.
     """
+    _limitar(request, usuario)
     contexto = Contexto(
         dispositivo=request.headers.get("user-agent"),
         ip=None if request.client is None else request.client.host,
@@ -78,3 +82,16 @@ def propor_rascunho(
         tokens_entrada=resultado.tokens_entrada,
         tokens_saida=resultado.tokens_saida,
     )
+
+
+def _limitar(request: Request, usuario: Usuario) -> None:
+    """Cada consulta custa tokens, e o rascunho ainda cria PT.
+
+    O limite é por pessoa e origem: um cliente com defeito em laço encheria o acervo de
+    rascunhos e a fatura de tokens antes de alguém perceber.
+    """
+    chave = chave_do_pedido(
+        None if request.client is None else request.client.host, str(usuario.id)
+    )
+    IA.exigir(chave)
+    IA.registrar(chave)

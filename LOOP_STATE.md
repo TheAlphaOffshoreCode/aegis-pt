@@ -18,7 +18,7 @@ Fonte de verdade para retomar o trabalho. Atualizado ao fim de cada loop.
 | L10 | IA: geração de rascunho | ✅ concluído | 2026-08-08 |
 | L11 | Indicadores e alertas | ✅ concluído | 2026-08-08 |
 | L12 | PWA e operação offline | ✅ concluído | 2026-08-08 |
-| L13 | Auditoria de segurança e fechamento | — | — |
+| L13 | Auditoria de segurança e fechamento | ✅ concluído | 2026-08-08 |
 
 ---
 
@@ -683,13 +683,73 @@ Na mesma revisão saíram mais três: `cursor: pointer` em cartão que não clic
 só por mudança de borda (fina demais no escuro) e um bloco `prefers-reduced-motion` que era
 código morto — não há animação nenhuma nesta folha. Detector limpo no fim.
 
+---
+
+## L13 — Auditoria de segurança e fechamento (2026-08-08)
+
+**Entregue:** o endurecimento (cabeçalhos, limite de tentativas, conferência de conteúdo de
+anexo, assinatura sobre leitura atual, erro sem stack) e a **auditoria** — cada pendência
+declarada do L0 ao L12 resolvida em correção com teste ou risco aceito por escrito.
+**Aceite:** 232 testes passando (19 novos). Contra a aplicação rodando: a sexta tentativa de
+senha responde 429 com `Retry-After`, um executável `MZ` renomeado para `.pdf` é recusado no
+primeiro bloco, e todos os cabeçalhos saem — inclusive nas respostas de erro.
+
+### Arquivos tocados
+
+| Arquivo | Papel |
+|---|---|
+| `app/security/cabecalhos.py` | CSP e demais cabeçalhos, em middleware |
+| `app/security/limite.py` | janela deslizante por origem e identidade |
+| `app/security/arquivos.py` | assinatura dos formatos aceitos |
+| `app/services/anexos.py` | conferência do primeiro bloco antes de gravar |
+| `app/services/transicoes.py`, `app/schemas/permissao.py` | `visto_em` opcional na transição |
+| `app/routers/auth.py`, `app/routers/ai.py` | limites aplicados |
+| `app/main.py` | middleware e handler genérico de erro |
+| `static/js/app.js` | o PWA passa a enviar `visto_em` ao assinar |
+| `docs/SECURITY.md` | **a auditoria**: 17 pendências resolvidas em corrigido ou aceito |
+| `tests/test_endurecimento.py` | 19 testes |
+
+### Decisões
+
+- **CSP sem `unsafe-inline` nem `unsafe-eval`.** O produto permite ser rígido: PWA vanilla, sem
+  framework, sem build e sem CDN, então não existe script inline para acomodar.
+- **Isso e o token no `localStorage` são uma decisão só, não duas.** Guardar o token ali só é
+  defensável porque não há script de terceiro e a CSP proíbe um. Estão documentados juntos de
+  propósito: **relaxar `script-src` transforma o risco aceito em defeito.**
+- **Limite por origem *e* identidade.** Só por IP puniria a unidade inteira atrás de um NAT; só
+  por matrícula deixaria varrer contas diferentes da mesma origem. O acerto zera a contagem.
+- **Conferência de conteúdo antes da de tamanho.** Aborta um arquivo de tipo errado depois de
+  64 KB em vez de ler até o limite. Custou ajustar um teste antigo que mandava bytes de
+  enchimento sem cabeçalho `%PDF-`.
+- **`visto_em` obrigatório na edição, opcional na transição.** Na edição impede sobrescrita; na
+  transição impede que uma assinatura valha por um documento que mudou depois de lido. Torná-lo
+  obrigatório quebraria todo cliente existente por uma garantia que é melhoria, não correção.
+
+### O que a auditoria decidiu não corrigir, e por quê
+
+Sete pendências ficaram como **risco aceito**, cada uma com o motivo escrito na tabela de
+`docs/SECURITY.md`. As que mais valem repetir:
+
+- **Sem lista de revogação de token.** O token não carrega perfil: perfil e lotação são lidos do
+  banco a cada requisição, então revogar acesso vale na hora. O que sobrevive é a identidade,
+  por no máximo um turno. Uma lista de revogação exige estado compartilhado entre processos.
+- **Injeção de prompt pelo conteúdo da PT.** Revisada aqui: não faz o modelo agir — não há
+  ferramenta que escreva, e as fontes vêm do banco, não da resposta. Influencia a redação.
+  Contenção estrutural vale mais que endurecimento de prompt, e a estrutura já está posta.
+- **Trilha por PT, sem cadeia global.** É desenho: o documento é o que uma investigação
+  reconstrói. Trilha de login é outro artefato, com outra pergunta de retenção.
+
+Dois limites valem para a tabela inteira e estão escritos lá: os limitadores são **em processo**
+(com vários workers, o limite efetivo multiplica), e **não houve teste de invasão** — isto é
+auditoria de código e desenho feita por quem escreveu o código, e vale o que isso vale.
+
 ### Pendências abertas
 
 | # | Pendência | Loop de destino |
 |---|---|---|
 | ~~P1~~ | ~~Fontes só em fallback de sistema~~ — Oswald e JetBrains Mono embarcadas em `static/fonts/`, com a OFL junto | resolvido no L12 |
 | ~~P2~~ | ~~Sem manifesto e sem service worker~~ — `manifest.webmanifest`, ícones e `sw.js` na raiz | resolvido no L12 |
-| P3 | Cabeçalhos de segurança, rate limiting, tratamento de erro sem stack | L13 |
+| ~~P3~~ | ~~Sem cabeçalhos, sem rate limiting, erro com stack~~ — os três entregues | resolvido no L13 |
 | ~~P4~~ | ~~Dependências de auth~~ — `argon2-cffi` e `pyjwt` no `requirements.txt` | resolvido no L2 |
 | ~~P5~~ | ~~Dependências de IA no `requirements.txt`~~ — `anthropic>=0.121`; índice vetorial não foi preciso, as ferramentas consultam o banco | resolvido no L9 |
 | P6 | `starlette.testclient` avisa que `httpx` está depreciado em favor de `httpx2` — sem efeito hoje | reavaliar em L13 |
@@ -700,7 +760,7 @@ código morto — não há animação nenhuma nesta folha. Detector limpo no fim
 | ~~P11~~ | ~~`AlertaRead` sem consumidor~~ — `/alertas` entregue, com `mensagem`, `unidade_id` e `responsavel` derivado | resolvido no L11 |
 | ~~P12~~ | ~~`usuario` sem credencial~~ — `senha_hash`, `ultimo_acesso` e `unidade_id` criados | resolvido no L2 |
 | P13 | Compatibilidade com Python 3.11 só é provada no CI — esta máquina tem apenas 3.14 | contínuo |
-| P14 | Login sem limite de tentativas e sem bloqueio de conta; sem lista de revogação de token — token vazado vale até vencer | L13 |
+| P14 | Login com limite desde o L13 (5/min por origem e matrícula). Continua **sem lista de revogação**: token vazado vale até vencer, no máximo um turno — risco aceito e justificado em `docs/SECURITY.md` | aceito no L13 |
 | P15 | Lotação é uma unidade só (`usuario.unidade_id`). Multi-unidade exigiria tabela associativa | quando aparecer o caso |
 | P16 | Criação e edição de PT já entram na trilha. Falta o evento de **login**, que não tem PT e por isso fica fora da cadeia por PT — decidir se ganha trilha própria | L13 |
 | P26 | A cadeia é por PT. Não há cadeia global, então um evento sem PT (login) não tem onde encadear | L13 |
@@ -715,25 +775,25 @@ código morto — não há animação nenhuma nesta folha. Detector limpo no fim
 | ~~P20~~ | ~~`documento_ausente` sempre acusando~~ — upload entregue; a pendência some quando o papel chega | resolvido no L7 |
 | P28 | **OCR do acervo legado.** Adiado por decisão: exige Tesseract como dependência de sistema e depende de um fluxo de importação em lote que ainda não existe | L8 |
 | P29 | Anexo removido some do disco depois do commit. Se o `unlink` falhar, sobra arquivo órfão — inverter a ordem deixaria linha apontando para nada, que é pior | L13 |
-| P30 | Só a extensão é validada, não o conteúdo real do arquivo. Conferir *magic bytes* barra um `.exe` renomeado para `.pdf` | L13 |
+| ~~P30~~ | ~~Só a extensão validada~~ — assinatura conferida no primeiro bloco; provado com um `MZ` renomeado | resolvido no L13 |
 | P21 | Duração máxima e pares incompatíveis são constantes em `exigencias.py`. Se a operação quiser ajustar sem deploy, viram configuração | quando pedirem |
 | P22 | API aceita datetime sem fuso e o trata como UTC. Exigir offset explícito é decisão do contrato HTTP | L12/L13 |
 | P32 | **O caminho real contra a Claude API não foi exercitado**: esta máquina não tem chave. Provado o que dá — laço, escopo, fontes e 503 — com cliente falso e com a aplicação no ar. Falta uma consulta de verdade | assim que houver chave |
-| P33 | Conteúdo de PT é texto de terceiro e chega ao modelo dentro do resultado da ferramenta. Não faz o modelo agir (não há com o quê), mas influencia a redação da resposta | L13, com a revisão de prompts |
-| P34 | `/ai/consulta` sem limite de uso: cada consulta custa tokens e qualquer usuário autenticado repete à vontade. Limitado por consulta (6 iterações, 8000 tokens), não por pessoa | L13, junto com P14 |
+| P33 | Injeção via conteúdo de PT — **revisada e aceita** no L13: não faz o modelo agir, influencia redação. A contenção é estrutural e já está posta | aceito no L13 |
+| ~~P34~~ | ~~`/ai/consulta` sem limite de uso~~ — 20/min por pessoa e origem | resolvido no L13 |
 | P35 | A consulta por IA não entra na trilha. Quem perguntou o quê pode ser registro que a auditoria vai querer — esbarra em P26 (evento sem PT não tem cadeia) | L13 |
 | P36 | Fallback de modelo (beta) não implementado: numa recusa ou indisponibilidade, a consulta falha em vez de tentar outro modelo. Deliberado — trocar quem responde sobre segurança é decisão do William | quando o William decidir |
 | P37 | **Rascunho não pode nascer incompleto.** `validar_respostas` vive na escrita (`criar_pt`/`atualizar_pt`), não em `avaliar_pt` — por isso a medição entra junto com o pedido. Se a operação quiser abrir a PT *antes* de medir, a completude precisa migrar para o motor de regras e passar a barrar a transição, não a criação | decisão de produto |
 | P38 | Perigo e controle são duas listas de frases (`[{"descricao": ...}]`), sem vínculo entre si. Amarrar cada controle ao perigo que ele mitiga é o que uma tela de análise vai querer | L11/L12 |
-| P39 | `/ai/rascunho` custa tokens e cria PT a cada chamada: sem limite de uso, um laço enche o acervo de rascunhos. Vale junto com o rate limit da P34 | L13 |
+| ~~P39~~ | ~~`/ai/rascunho` sem limite~~ — mesmo limitador da P34 | resolvido no L13 |
 | P40 | **Ferramenta `indicadores` para a IA**, que fecharia a brecha de o modelo somar resultados de busca. Esbarra na regra 3 como implementada: resposta sem PT recuperada é descartada. Exige decidir o que conta como fonte | decisão do William |
 | P41 | **Nada agenda a sincronização de alertas.** `/alertas/sincronizar` é uma rota; sem um cron chamando, o painel envelhece em silêncio. Um deploy que esquecer a linha do crontab tem quadro parado, não errado | L12/L13 (operação) |
 | P42 | `sincronizar()` varre todas as PTs não encerradas e todas as certificações a cada chamada. Com acervo grande vira leitura completa por passagem — mesma família da P27 | quando o acervo crescer |
 | P43 | Alerta não tem reconhecimento humano: só `resolvido` automático pela condição sumir. Não dá para dizer "vi, estou tratando", e o `CANCELADO` do enum não tem caminho de código | quando a operação pedir |
 | P44 | Transição não é enfileirada offline, por decisão. Se a operação precisar assinar sem sinal, exige repensar onde o motor de regras roda — não é ajuste de fila | decisão de produto |
-| P45 | Fila e token vivem em `localStorage`: síncrono, ~5 MB e legível por qualquer script da origem. Só é aceitável porque não há script de terceiro nem CDN | L13 |
+| P45 | Token no `localStorage` — **risco aceito condicionalmente**: só é defensável porque não há script de terceiro e a CSP proíbe um. Relaxar `script-src` transforma isto em defeito | aceito no L13 |
 | P46 | Anexar arquivo offline não existe: a fila guarda correção de rascunho, não binário. Exigiria IndexedDB | quando pedirem |
-| P47 | Transição sobre leitura velha não é barrada: alguém pode aprovar o que não viu. Não é sobrescrita (por isso ficou fora do L12), mas é da mesma família — `visto_em` na transição resolveria | L13 |
+| ~~P47~~ | ~~Assinar sobre leitura velha~~ — `visto_em` opcional na transição, recusa com `documento_alterado` | resolvido no L13 |
 | P48 | Nenhum teste roda o JavaScript: não há runner no projeto. As telas foram verificadas com `node --check`, pelos contratos dos endpoints e rodando a aplicação | quando houver caso |
 
 ### Ponto exato de retomada
@@ -768,20 +828,29 @@ responde 2 PTs no escopo, uma em `LIBERACAO` e uma em `RASCUNHO`.
 **Para manter os alertas vivos:** algo precisa chamar `POST /alertas/sincronizar`
 periodicamente (P41). Não há agendador no processo, de propósito.
 
-L12 fechado e verificado: 213 testes passando, o obrigatório do contrato entre eles. Contra o
-banco de desenvolvimento, a edição sobre leitura velha foi recusada e nada foi perdido.
-`/sw.js`, o manifesto e as quatro fontes respondem 200.
+L13 fechado e verificado: **232 testes passando**. Contra a aplicação rodando, a sexta
+tentativa de senha responde 429 com `Retry-After`, um executável renomeado para `.pdf` é
+recusado no primeiro bloco e todos os cabeçalhos saem, inclusive nas respostas de erro.
 
-Próximo passo: **decisão do William entre dois caminhos.**
+## O contrato está cumprido
 
-**L13 — Auditoria de segurança e fechamento.** O último do contrato, e o que mais dívida
-declarada tem esperando: cabeçalhos de segurança e rate limiting (P3), limite de tentativas de
-login e revogação de token (P14), revisão de injeção de prompt (P33), limite nas rotas de IA
-(P34, P39), *magic bytes* nos anexos (P30), token fora do `localStorage` (P45) e transição
-sobre leitura velha (P47). É o loop que existe para transformar "declarado em aberto" em
-resolvido ou em risco aceito por escrito.
+**L0 a L13 concluídos.** Todo o escopo planejado no L0 foi entregue, e as oito regras
+invioláveis têm teste que falha se alguma sair.
 
-**L8.5 — Acervo legado e OCR** (ainda proposto). Escopo próprio: modelo `documento_legado`,
+O que sobra não é dívida escondida — está tudo na tabela acima e, com o motivo, na tabela de
+`docs/SECURITY.md`:
+
+- **Uma pendência operacional (P41):** falta uma linha de crontab chamando
+  `POST /alertas/sincronizar`. Sem ela o quadro de alertas envelhece em silêncio.
+- **Duas decisões de produto esperando o William:** a ferramenta `indicadores` para a IA (P40)
+  e se o rascunho pode nascer incompleto (P37).
+- **Sete riscos aceitos por escrito**, cada um com o porquê.
+- **Um loop proposto e nunca aberto: L8.5 — Acervo legado e OCR.** Continua sendo o caminho
+  para o acervo em papel: modelo `documento_legado`, ingestão em lote, OCR com Tesseract,
+  indexação e vínculo com PT. Entra hoje como mais uma ferramenta somente-leitura da IA, sem
+  mexer no laço.
+
+Para retomar em qualquer um deles, o ponto de partida é a tabela de pendências desta página. Escopo próprio: modelo `documento_legado`,
 upload em lote, OCR com Tesseract, indexação do texto extraído e vínculo opcional com PT. Traz
 a dependência de sistema para o CI (`apt-get install tesseract-ocr`). Depois do L9, entra como
 mais uma ferramenta somente-leitura, sem mexer no laço. A busca textual atual (P31)

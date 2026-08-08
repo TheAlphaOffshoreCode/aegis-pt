@@ -500,7 +500,12 @@ async function blocoDeTransicoes(pt) {
             try {
               await api(`/pts/${pt.id}/transicoes`, {
                 method: "POST",
-                body: JSON.stringify({ destino: transicao.destino }),
+                body: JSON.stringify({
+                  destino: transicao.destino,
+                  // O que esta tela mostrou. Se a PT mudou depois que ela carregou, o
+                  // servidor recusa — assinar é declarar que se leu o documento.
+                  visto_em: pt.atualizado_em,
+                }),
               });
               rotear();
             } catch (erro) {

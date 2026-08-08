@@ -237,6 +237,23 @@ Deviations: `SUSPENSA` (only from `EM_EXECUCAO`) and `REJEITADA` (returns to `RA
 - **No CDN, and that includes fonts.** The identity fonts are vendored under `static/fonts/`
   with their OFL licence. A font that only loads online is a visual identity that disappears
   exactly offshore, where the product is used.
+- **The strict CSP and the token in `localStorage` are one decision, not two.** Storing the
+  token there is only defensible because no third-party script ships and the CSP forbids one.
+  Relaxing `script-src` turns an accepted risk into a defect; they are documented together in
+  `docs/SECURITY.md` for that reason.
+- **Security headers are applied by middleware, so they cover error responses too.** A header
+  that disappears exactly where something went wrong is not a control.
+- **Upload validation checks the first block's signature, before the size check.** Aborting a
+  wrong-type upload after 64 KB beats reading to the size limit first. A test that sends
+  filler bytes to trigger `arquivo_muito_grande` must start them with a real `%PDF-` header,
+  or it now fails on `conteudo_nao_confere` instead.
+- **The rate limiters are in-process state.** Tests must clear `LOGIN._marcas` / `IA._marcas`,
+  or one test inherits the previous one's count. In production, more than one worker means the
+  effective limit multiplies by the worker count — a floor, not a ceiling.
+- **`visto_em` is required on edit and optional on transition, deliberately.** On edit it
+  prevents an overwrite; on transition it prevents a signature standing for a document that
+  changed after it was read. Making it required on transitions would break every existing
+  client for a guarantee that is a genuine improvement rather than a correctness fix.
 
 ## Conventions
 

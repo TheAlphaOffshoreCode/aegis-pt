@@ -147,11 +147,15 @@ def test_arquivo_vazio_e_recusado_e_nao_deixa_rastro_em_disco(
 def test_arquivo_acima_do_limite_e_recusado_sem_sobrar_arquivo(
     client: TestClient, cenario: dict, db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Aborta durante a leitura, e o que já foi escrito é apagado."""
+    """Aborta durante a leitura, e o que já foi escrito é apagado.
+
+    O conteúdo precisa ser um PDF de verdade: desde o L13 a conferência de assinatura roda no
+    primeiro bloco e recusaria antes, por outro motivo.
+    """
     monkeypatch.setenv("AEGIS_ANEXO_TAMANHO_MAXIMO_MB", "0")
     get_settings.cache_clear()
     try:
-        resposta = _anexar(client, cenario, conteudo=b"x" * 5000)
+        resposta = _anexar(client, cenario, conteudo=b"%PDF-1.4" + b"x" * 5000)
     finally:
         monkeypatch.delenv("AEGIS_ANEXO_TAMANHO_MAXIMO_MB", raising=False)
         get_settings.cache_clear()

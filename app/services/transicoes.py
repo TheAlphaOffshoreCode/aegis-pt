@@ -5,6 +5,8 @@ quem assina antes de rodar o motor de risco. Assim a mensagem que volta é a do 
 problema real, e não a de um efeito colateral dele.
 """
 
+from datetime import datetime
+
 from sqlalchemy.orm import Session
 
 from app.audit.documento import diferencas, hash_do_documento, snapshot_da_pt
@@ -89,9 +91,24 @@ def executar_transicao(
     ator: Usuario,
     *,
     motivo: str | None = None,
+    visto_em: datetime | None = None,
     contexto: Contexto = Contexto(),
 ) -> PermissaoTrabalho:
     """Move a PT de estado, assinando, versionando e registrando na trilha."""
+    # Assinar é declarar que se leu o documento. Se ele mudou entre a leitura e a assinatura,
+    # a assinatura seria sobre outra coisa — e o hash gravado na trilha registraria uma
+    # concordância que nunca houve.
+    if visto_em is not None and visto_em != pt.atualizado_em:
+        raise ConflitoDeNegocio(
+            [
+                bloqueio(
+                    "documento_alterado",
+                    f"A PT foi alterada em {pt.atualizado_em:%d/%m/%Y %H:%M:%S} UTC, depois da "
+                    "versão que você leu. Recarregue antes de assinar.",
+                )
+            ]
+        )
+
     pendencias = validar_transicao(pt.estado, destino)
     if bloqueiam(pendencias):
         raise ConflitoDeNegocio(bloqueiam(pendencias))

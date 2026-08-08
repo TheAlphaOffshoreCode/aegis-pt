@@ -1,7 +1,8 @@
 # Security
 
-The full audit is L13. This file records the posture as it is built, loop by loop, so the
-final audit verifies claims instead of discovering them.
+Written loop by loop as the posture was built, so the closing audit could verify claims rather
+than discover them. **L13 is complete**: the Findings table at the end resolves every pendency
+declared across L0–L12 into a fix with a test behind it, or an accepted risk with its reason.
 
 ## Secrets
 
@@ -25,8 +26,8 @@ CORS is restricted to the origins listed in `AEGIS_CORS_ORIGINS` (defaults to lo
 with an explicit method and header allowlist. `*` is never acceptable, including in
 development, because the credentialed PWA is the only client.
 
-Security headers, rate limiting and error handling that never leaks a stack trace are
-scheduled for L13.
+Security headers, rate limiting and non-leaking error handling arrived in L13 — see
+Hardening below for what each one is and why the CSP could be this strict.
 
 ## Authentication (L2)
 
@@ -47,8 +48,10 @@ Login answers the same `401` for wrong password, unknown matrícula and deactiva
 and burns an equivalent Argon2 verification when the matrícula does not exist, so neither the
 message nor the timing reveals who exists on board.
 
-Not covered yet: **login rate limiting and account lockout** (L13, with the other hardening),
-and there is **no token revocation list** — a leaked token is valid until it expires.
+Login is rate-limited since L13 (five attempts per minute, per origin and matrícula). There is
+still **no token revocation list**: a leaked token is valid until it expires, at most one shift.
+What it carries is only the identity — profile and posting are re-read on every request, so
+revoking a profile or deactivating an account takes effect immediately. See Findings.
 
 ## Authorization
 
@@ -340,8 +343,71 @@ Two exposures remain open and are declared rather than assumed away:
   repeat it. Bounded per query (6 tool iterations, 8000 output tokens), unbounded per user.
   L13, with the other hardening.
 
+## Hardening (L13)
+
+The closing loop's job was not to add features but to settle the debt: every pendency declared
+across L0–L12 is now either fixed with a test behind it, or an accepted risk written down with
+its reason. What follows is the audit.
+
+**Security headers on every response**, including error responses — a header that disappears
+exactly where something went wrong is not a control. The CSP is unusually strict because the
+product allows it to be: the PWA is vanilla, with no framework, no build step, no CDN and not
+one inline script, so there is no `unsafe-inline` to accommodate. That same fact is what makes
+the token in `localStorage` tolerable, and the two decisions are written next to each other on
+purpose — **the day a third-party script arrives, both fall together.**
+
+**Login throttling.** Five attempts per minute, keyed by origin *and* matrícula. Keyed by IP
+alone it would punish a whole unit behind one NAT; by matrícula alone, someone could sweep
+different accounts from the same origin without ever hitting the limit. A successful login
+clears the counter — a mistake followed by a success should not leave the door primed.
+
+**Rate limit on the AI routes.** Twenty per minute per person and origin. Each query costs
+tokens and `/ai/rascunho` also creates a permit; a client stuck in a loop would fill the
+archive and the bill before anyone noticed.
+
+**Uploads are checked by content, not only by name.** The first block of every upload must
+carry the signature of the type its extension promises. An executable renamed to `.pdf`
+cleared the old extension allowlist and would later be served back for someone to open on
+board. Verified against the running application with a real `MZ` header.
+
+**Signing a document you did not read is refused.** A transition may carry `visto_em`; if the
+permit changed after the read, it is rejected with `documento_alterado`. Optional here, unlike
+on edit, and the difference is deliberate: on edit it prevents an overwrite, here it prevents
+a signature standing for a document that has since changed — which the trail's document hash
+would otherwise record as an agreement that never happened.
+
+**Errors no longer leak.** An unhandled exception returns a generic `500`; the detail goes to
+the log. A stack trace in a response hands over file paths, library versions and sometimes a
+fragment of the query.
+
 ## Findings
+
+Every pendency declared in L0–L12, and what became of it. "Accepted" means the risk is real,
+understood, and deliberately not fixed — with the reason, so the next person inherits the
+decision rather than the surprise.
 
 | # | Severity | Finding | Status |
 |---|---|---|---|
-| — | — | No audit performed yet (L13) | — |
+| P3 | High | No security headers, no rate limiting, errors leaking stack traces | **Fixed** — CSP, nosniff, frame-deny, referrer, HSTS outside development; generic `500` |
+| P14 | High | Login with no attempt limit; brute force unimpeded | **Fixed** — 5/min per origin+matrícula, cleared on success |
+| P30 | High | Only the extension validated; a renamed executable was accepted | **Fixed** — signature check on the first block, before anything is written |
+| P34 · P39 | Medium | AI routes without any usage limit; each call costs tokens, one creates a permit | **Fixed** — 20/min per person and origin |
+| P47 | Medium | A transition could be signed over a stale read | **Fixed** — optional `visto_em`, refused with `documento_alterado` |
+| P14b | Medium | No token revocation list; a leaked token is valid until it expires | **Accepted** — the token carries no profile and is re-read from the database on every request, so revoking a profile or deactivating an account takes effect immediately. What survives is the identity, for at most one shift. A revocation list means shared state across processes; revisit with the multi-process deploy |
+| P45 | Medium | Token in `localStorage`, readable by any script on the origin | **Accepted, conditionally** — no third-party script and no CDN ship with the product, and the CSP forbids both. Moving to an httpOnly cookie means CSRF protection on every mutation; it buys nothing until the premise breaks. **The condition is the CSP: if it ever relaxes, this becomes a defect** |
+| P33 | Medium | Permit text reaches the model inside tool results | **Accepted** — reviewed here. It cannot make the model act: there is no tool that writes, and the sources come from the database rather than the reply. What it can influence is the *wording* of an answer. Structural containment beats prompt hardening, and the structure is already in place |
+| P16 · P26 | Low | Login is not in the trail; there is no global chain for events without a permit | **Accepted** — the chain is per permit by design, and the document is what an investigation reconstructs. A login trail is a different artifact with a different retention question, not a missing link in this one |
+| P27 · P42 | Low | The verifier walks the whole chain per query; the alert sync scans everything per pass | **Accepted** — both are linear in a per-permit trail and a live-permit set that stay small at one unit's volume. They become real when the archive does |
+| P29 | Low | A failed `unlink` after commit leaves an orphan file | **Accepted** — the alternative, deleting before the commit, risks a row pointing at nothing, which is worse. An orphan file is recoverable by sweep |
+| P22 | Low | The API accepts naive datetimes and treats them as UTC | **Accepted** — every column normalises at the database edge (`UTCDateTime`), so the ambiguity never reaches storage. Requiring an explicit offset is an HTTP contract decision |
+| P44 · P46 | Low | Transitions are not queued offline; attachments cannot be uploaded offline | **Accepted by design** — see the offline section: queueing a release would be a promise the server has not made |
+| P48 | Low | No test runs the JavaScript | **Accepted** — no runner exists in the project. The screens are checked by `node --check`, by the endpoint contracts they consume, and by running the application. Adding a JS runner is a build-step decision the project has so far avoided on purpose |
+| P41 | Medium | Nothing schedules the alert sync | **Open — operational** — one crontab line calling `POST /alertas/sincronizar`. Deliberately outside the process; documented in three places |
+| P40 | — | An `indicadores` tool for the AI conflicts with how rule 3 is implemented | **Open — product decision** |
+| P37 | — | A draft cannot be born incomplete | **Open — product decision** |
+
+Two limits apply to the whole table. The rate limiters are **in-process**: with more than one
+worker each counts separately, so the effective limit multiplies by the worker count — a floor,
+not a ceiling, and the place for a real one is the edge. And no penetration test has been run;
+this is a code and design audit by the person who wrote the code, which is worth exactly what
+that is worth.

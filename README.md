@@ -12,8 +12,8 @@ audit trail that survives an incident investigation.
 
 [![CI](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml/badge.svg)](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Status: L12 of L13](https://img.shields.io/badge/status-L12_of_L13-f59e0b.svg)](#roadmap)
-[![Tests: 213](https://img.shields.io/badge/tests-213_passing-22c55e.svg)](#tests)
+[![Status: L13 of L13 — complete](https://img.shields.io/badge/status-L13_of_L13_complete-22c55e.svg)](#roadmap)
+[![Tests: 232](https://img.shields.io/badge/tests-232_passing-22c55e.svg)](#tests)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Offline capable](https://img.shields.io/badge/PWA-offline_reads-0ea5e9.svg)](#offshore-constraints)
 
@@ -23,7 +23,7 @@ audit trail that survives an incident investigation.
 
 ## Current state — read this before cloning
 
-**L0 through L12 are done, and the permit cycle actually closes.** A permit is opened from a
+**All thirteen loops are done, and the permit cycle actually closes.** A permit is opened from a
 form defined per work type, collects its documents, walks the approval chain gathering a
 signature at each step, gets checked by a deterministic rule engine before release, leaves a
 hash-chained trail that detects tampering, and can be pulled back out as a single dossier —
@@ -107,11 +107,25 @@ the instant of the transition, so queueing a release would let someone walk away
 screen believing they had authorised work the server may still refuse. The screen says so
 rather than hiding it.
 
+L13 closed the contract by settling its debts rather than adding features. Security headers on
+every response including errors, login throttled at five attempts a minute, the AI routes at
+twenty, uploads checked by content instead of by filename — an executable renamed to `.pdf`
+cleared the old extension allowlist — and a signature refused when the document changed after
+it was read. Everything else is in the Findings table of [docs/SECURITY.md](docs/SECURITY.md):
+**every pendency declared across the thirteen loops resolved into a fix with a test behind it,
+or a risk accepted in writing with its reason.**
+
+Two of those are worth repeating here, because they are conditions rather than conclusions. The
+token lives in `localStorage`, which is only defensible because no third-party script ships and
+the CSP forbids one — **relax `script-src` and it becomes a defect.** And the rate limiters are
+in-process: with more than one worker the effective limit multiplies, so the number is a floor,
+not a ceiling.
+
 **What is still missing:** ingestion of the paper archive with OCR (proposed as its own loop —
-what it actually needs is a bulk import flow, not an OCR call) and the closing security audit
-(L13), which is where the declared pendencies become either fixed or a risk accepted in
-writing. Alerts also need something to call `POST /alertas/sincronizar` on a schedule: there
-is no daemon inside the process, on purpose.
+what it actually needs is a bulk import flow, not an OCR call), one crontab line calling
+`POST /alertas/sincronizar` on a schedule, and two product decisions listed in `LOOP_STATE.md`.
+No penetration test has been run; this is a code and design audit by the person who wrote the
+code, and it is worth exactly what that is worth.
 
 ## The problem
 
@@ -229,7 +243,7 @@ way to create accounts with a known password.
 python -m pytest -q
 ```
 
-Two hundred and thirteen tests, none of which reach the network — the AI loop is exercised
+Two hundred and thirty-two tests, none of which reach the network — the AI loop is exercised
 with an injected client, and the suite forces the API key empty so a key sitting in a
 developer's `.env` cannot make the tests call out and bill. The ones worth naming are those
 that fail loudly the day a guarantee quietly stops holding:
@@ -379,10 +393,12 @@ release would be a promise the server has not made. `/impeccable audit` ran over
 and its findings were fixed — the ones that mattered improved accessibility rather than only
 satisfying the detector.
 
-**L13 — the close.** A security audit that turns every declared pendency into either a fix or
-a risk accepted in writing: security headers and rate limiting, login throttling and token
-revocation, prompt-injection review of every template, magic-byte checks on uploads, and the
-token's home outside `localStorage`.
+**L13 — done.** The close. Security headers, login and AI-route rate limiting, magic-byte
+checks on uploads, refusal to sign a document that changed after it was read, and errors that
+no longer leak a stack trace. Then the audit itself: seventeen pendencies, each resolved into a
+fix with a test or an accepted risk with its reason — including the ones deliberately *not*
+fixed, because a risk somebody inherits with the reasoning attached is worth more than a
+surprise.
 
 ## Disclaimer
 

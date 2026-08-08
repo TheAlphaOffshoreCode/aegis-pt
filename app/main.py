@@ -7,9 +7,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+import logging
+
 from app.config import get_settings
 from app.routers import ai, auth, health, indicadores, pts
 from app.rules.pendencias import ConflitoDeNegocio
+from app.security.cabecalhos import CabecalhosDeSeguranca
+
+registro = logging.getLogger("aegis")
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
@@ -28,6 +33,25 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+# Depois do CORS na lista, portanto **antes** dele na resposta: os cabeçalhos precisam sair
+# também nas respostas de erro, que o CORS não chega a montar.
+app.add_middleware(CabecalhosDeSeguranca, hsts=settings.environment != "development")
+
+
+@app.exception_handler(Exception)
+def falha_inesperada(request: Request, exc: Exception) -> JSONResponse:
+    """Erro não previsto vira `500` genérico — o detalhe vai para o log, não para a resposta.
+
+    Uma stack trace na resposta entrega caminho de arquivo, versão de biblioteca e, às vezes,
+    trecho de consulta. Quem precisa dela é quem opera o serviço, não quem chamou.
+    """
+    registro.exception("Falha não tratada em %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "Erro interno. A ocorrência foi registrada."},
+    )
+
 
 @app.exception_handler(ConflitoDeNegocio)
 def conflito_de_negocio(request: Request, exc: ConflitoDeNegocio) -> JSONResponse:

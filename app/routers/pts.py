@@ -153,6 +153,7 @@ def transicionar(
         dados.destino,
         ator,
         motivo=dados.motivo,
+        visto_em=dados.visto_em,
         contexto=_contexto(request, dados.geolocalizacao),
     )
 

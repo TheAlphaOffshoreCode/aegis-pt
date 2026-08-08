@@ -20,6 +20,7 @@ from app.models.enums import EstadoPT, PerfilUsuario, TipoAnexo
 from app.models.permissao import Anexo, PermissaoTrabalho
 from app.models.pessoa import Usuario
 from app.rules.pendencias import ConflitoDeNegocio, bloqueio
+from app.security.arquivos import confere
 
 # Allowlist, e não denylist: o que não está aqui não sobe. Formatos que o navegador
 # renderiza como página (`.html`, `.svg`) ficam de fora de propósito.
@@ -110,9 +111,26 @@ def anexar(
 
     digest = hashlib.sha256()
     tamanho = 0
+    primeiro_bloco = True
     try:
         with destino.open("wb") as saida:
             while bloco := arquivo.file.read(BLOCO):
+                if primeiro_bloco:
+                    primeiro_bloco = False
+                    # A extensão é o que o cliente afirma; estes bytes são o que o arquivo é.
+                    # Sem esta conferência, um executável renomeado para `.pdf` entra no
+                    # acervo e é servido de volta para alguém abrir a bordo.
+                    if not confere(bloco, EXTENSOES_PERMITIDAS[extensao]):
+                        raise ConflitoDeNegocio(
+                            [
+                                bloqueio(
+                                    "conteudo_nao_confere",
+                                    f"O conteúdo do arquivo não é um {extensao[1:].upper()} "
+                                    "válido, apesar da extensão",
+                                    campo="arquivo",
+                                )
+                            ]
+                        )
                 tamanho += len(bloco)
                 if tamanho > limite:
                     raise ConflitoDeNegocio(
