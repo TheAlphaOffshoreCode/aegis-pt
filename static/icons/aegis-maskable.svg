@@ -1,0 +1,8 @@
+<!-- Maskable: o desenho cabe na zona segura (80% central), porque o sistema recorta as bordas. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="AEGIS PT">
+  <rect width="128" height="128" fill="#0b0f14"/>
+  <path d="M64 34 L94 46 V68c0 19-13 29-30 35-17-6-30-16-30-35V46Z"
+        fill="none" stroke="#38bdf8" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M51 68 L60 77 L79 57" fill="none" stroke="#f59e0b" stroke-width="6"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

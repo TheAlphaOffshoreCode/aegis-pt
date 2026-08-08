@@ -212,6 +212,7 @@ def test_rascunho_so_e_corrigido_pelo_requisitante_e_so_enquanto_e_rascunho(
 
     correcao = _payload(cenario, descricao="Descrição corrigida")
     correcao.pop("unidade_id")  # a unidade não muda: mudá-la seria outra PT
+    correcao["visto_em"] = pt["atualizado_em"]
 
     assert client.patch(f"/pts/{pt['id']}", json=correcao, headers=dono).status_code == 200
     assert client.get(f"/pts/{pt['id']}", headers=dono).json()["descricao"] == "Descrição corrigida"

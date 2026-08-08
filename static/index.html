@@ -2,24 +2,32 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0b0f14">
   <title>AEGIS PT</title>
+  <link rel="manifest" href="/static/manifest.webmanifest">
+  <link rel="icon" href="/static/icons/aegis.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/icons/aegis.svg">
   <link rel="stylesheet" href="/static/css/aegis.css">
 </head>
 <body>
-  <header>
+  <header class="topo">
     <h1>Aegis PT</h1>
-    <span>Gestão de Permissões de Trabalho</span>
+    <span class="marca">PERMISSÃO DE TRABALHO</span>
+    <span class="espaco"></span>
+    <span class="chip" id="conexao" aria-live="polite">verificando</span>
+    <span class="chip" id="fila" hidden></span>
   </header>
 
-  <main>
-    <section class="painel">
-      <h2>Estado do serviço</h2>
-      <dl id="estado">
-        <div class="linha"><dt>Conexão</dt><dd><span class="chip" id="conexao">verificando</span></dd></div>
-      </dl>
-    </section>
+  <nav class="abas" id="abas" hidden aria-label="Seções">
+    <a href="#/pts">Permissões</a>
+    <a href="#/painel">Painel</a>
+    <a href="#/sair">Sair</a>
+  </nav>
+
+  <main id="tela" aria-live="polite">
+    <p class="vazio">Carregando…</p>
   </main>
 
   <script src="/static/js/app.js"></script>

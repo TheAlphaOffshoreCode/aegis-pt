@@ -12,10 +12,10 @@ audit trail that survives an incident investigation.
 
 [![CI](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml/badge.svg)](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Status: L11 of L13](https://img.shields.io/badge/status-L11_of_L13-f59e0b.svg)](#roadmap)
-[![Tests: 195](https://img.shields.io/badge/tests-195_passing-22c55e.svg)](#tests)
+[![Status: L12 of L13](https://img.shields.io/badge/status-L12_of_L13-f59e0b.svg)](#roadmap)
+[![Tests: 213](https://img.shields.io/badge/tests-213_passing-22c55e.svg)](#tests)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
-[![Offline capable](https://img.shields.io/badge/PWA-offline_planned-0ea5e9.svg)](#offshore-constraints)
+[![Offline capable](https://img.shields.io/badge/PWA-offline_reads-0ea5e9.svg)](#offshore-constraints)
 
 </div>
 
@@ -23,7 +23,7 @@ audit trail that survives an incident investigation.
 
 ## Current state — read this before cloning
 
-**L0 through L11 are done, and the permit cycle actually closes.** A permit is opened from a
+**L0 through L12 are done, and the permit cycle actually closes.** A permit is opened from a
 form defined per work type, collects its documents, walks the approval chain gathering a
 signature at each step, gets checked by a deterministic rule engine before release, leaves a
 hash-chained trail that detects tampering, and can be pulled back out as a single dossier —
@@ -84,11 +84,34 @@ going wrong, escalating from requisitante to coordenador to OIM as deadlines pas
 investigation later needs to find. And escalation is a function of the clock rather than a
 counter, so running the sync more often cannot inflate the urgency of anything.
 
+L12 turned it into something you can actually use on a deck. Real screens — login, the permit
+list, a permit with its dynamic form and available steps, the board — installable, dark, and
+readable offline. The identity fonts are vendored rather than fetched: a font that only loads
+online is an identity that disappears exactly offshore.
+
+The part worth explaining is the sync, because it is where an offline app usually lies. Every
+draft edit carries `visto_em` — the timestamp the client read before editing. If the permit
+moved on while the tablet was out of signal, the late edit is **refused**, not merged and not
+applied on top:
+
+```text
+PATCH /pts/1   { "descricao": "Corrigida no convés", "visto_em": "…12:42:08" }
+
+409  edicao_desatualizada
+     "A PT foi alterada em 08/08/2026 04:09:14 UTC, depois da versão que você editou.
+      Recarregue e refaça a correção."
+```
+
+Reading works offline; **signing a step does not, deliberately.** The rule engine decides at
+the instant of the transition, so queueing a release would let someone walk away from the
+screen believing they had authorised work the server may still refuse. The screen says so
+rather than hiding it.
+
 **What is still missing:** ingestion of the paper archive with OCR (proposed as its own loop —
-what it actually needs is a bulk import flow, not an OCR call), the offline PWA (L12) and the
-closing security audit (L13). The interface is still a diagnostic shell — this is a working
-API, not a finished product. Alerts also need something to call
-`POST /alertas/sincronizar` on a schedule: there is no daemon inside the process, on purpose.
+what it actually needs is a bulk import flow, not an OCR call) and the closing security audit
+(L13), which is where the declared pendencies become either fixed or a risk accepted in
+writing. Alerts also need something to call `POST /alertas/sincronizar` on a schedule: there
+is no daemon inside the process, on purpose.
 
 ## The problem
 
@@ -206,7 +229,7 @@ way to create accounts with a known password.
 python -m pytest -q
 ```
 
-A hundred and ninety-five tests, none of which reach the network — the AI loop is exercised
+Two hundred and thirteen tests, none of which reach the network — the AI loop is exercised
 with an injected client, and the suite forces the API key empty so a key sitting in a
 developer's `.env` cannot make the tests call out and bill. The ones worth naming are those
 that fail loudly the day a guarantee quietly stops holding:
@@ -236,6 +259,8 @@ that fail loudly the day a guarantee quietly stops holding:
   could come back in;
 - running the alert sync twice in the same minute opens nothing and escalates nothing, and an
   alert whose condition disappears is marked resolved rather than deleted;
+- **an edit made offline never overwrites a change that arrived first** — the late write is
+  refused, the earlier correction survives, and reloading is the way forward;
 - SQLite foreign keys are actually enforced, and the migration is compared against the models
   and then rolled all the way back.
 
@@ -270,13 +295,13 @@ also how CI runs them, on 3.11 and 3.14.
 | `POST` | `/ai/rascunho` | Drafts a permit from a description; measurements come from you |
 | `GET` | `/indicadores` | The operation in counts — every value a `COUNT`, never an estimate |
 | `GET` · `POST` | `/alertas` · `/alertas/sincronizar` | What is going wrong, and who it has escalated to |
-| `GET` | `/` · `/static/{path}` | PWA shell and vendored assets |
+| `GET` | `/` · `/static/{path}` · `/sw.js` | PWA shell, vendored assets, service worker |
 
 A blocking pendency returns `409` with a structured list — `codigo`, `severidade`, `mensagem`,
 `campo`, `responsavel` — never a bare sentence, because the screen needs to know which field to
 mark and who is expected to resolve it. `422` still means the payload did not parse at all.
 
-Still scheduled: the offline PWA and its sync at L12.
+Still scheduled: the closing security audit at L13.
 
 The `/ai/*` routes answer `503` when no API key is configured. The AI degrades on its own; the
 rest of the application starts and works without it.
@@ -346,9 +371,18 @@ instead of a wrong one. They escalate by the clock, from requisitante to coorden
 and are resolved rather than deleted. The suite passed on the first run; the development
 database still found a defect, announcing an already-expired certificate as "about to expire".
 
-**L12–L13 — operation.** The offline PWA with conflict resolution, and a closing security
-audit — which includes prompt-injection review of every template and a rate limit on the AI
-endpoints, both declared open rather than assumed solved.
+**L12 — done.** The PWA: real screens, installable, dark, readable without signal, with the
+identity fonts vendored rather than fetched. Draft edits made offline queue and carry what
+they saw, so a late write is refused instead of silently winning; signing a step requires
+connectivity, because the rule engine decides at the moment of the transition and a queued
+release would be a promise the server has not made. `/impeccable audit` ran over the screens
+and its findings were fixed — the ones that mattered improved accessibility rather than only
+satisfying the detector.
+
+**L13 — the close.** A security audit that turns every declared pendency into either a fix or
+a risk accepted in writing: security headers and rate limiting, login throttling and token
+revocation, prompt-injection review of every template, magic-byte checks on uploads, and the
+token's home outside `localStorage`.
 
 ## Disclaimer
 

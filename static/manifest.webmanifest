@@ -1,0 +1,26 @@
+{
+  "name": "AEGIS PT — Permissões de Trabalho",
+  "short_name": "AEGIS PT",
+  "description": "Gestão de permissões de trabalho para unidades offshore.",
+  "lang": "pt-BR",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0b0f14",
+  "theme_color": "#0b0f14",
+  "icons": [
+    {
+      "src": "/static/icons/aegis.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icons/aegis-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

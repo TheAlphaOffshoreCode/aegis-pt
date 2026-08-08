@@ -334,6 +334,7 @@ def test_editar_rascunho_deixa_rastro(
             "descricao": "Solda em suporte — descrição corrigida",
             "valida_de": atual.valida_de.isoformat(),
             "valida_ate": atual.valida_ate.isoformat(),
+            "visto_em": atual.atualizado_em.isoformat(),
         },
     )
     assert edicao.status_code == 200, edicao.text

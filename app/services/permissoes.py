@@ -324,6 +324,20 @@ def atualizar_pt(
             [bloqueio("nao_e_o_requisitante", "Só o requisitante pode corrigir o rascunho")]
         )
 
+    # A edição parte de uma leitura. Se a PT mudou entre aquela leitura e este envio, gravar
+    # por cima apagaria a alteração de outra pessoa sem ninguém ficar sabendo — que é
+    # exatamente o modo de falhar da sincronização offline.
+    if dados.visto_em != pt.atualizado_em:
+        raise ConflitoDeNegocio(
+            [
+                bloqueio(
+                    "edicao_desatualizada",
+                    f"A PT foi alterada em {pt.atualizado_em:%d/%m/%Y %H:%M:%S} UTC, depois da "
+                    "versão que você editou. Recarregue e refaça a correção.",
+                )
+            ]
+        )
+
     pendencias, modelo = _validar_estrutura(db, dados, pt.unidade_id)
     pendencias += _validar_equipe(db, dados.equipe)
     if modelo is not None:

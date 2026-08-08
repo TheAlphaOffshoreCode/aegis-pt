@@ -212,6 +212,44 @@ deployment that forgets the cron gets a silent board rather than a wrong one. An
 that reaches the top of the ladder stays there: above the OIM there is nobody on board to
 escalate to, which is a fact about the vessel, not a gap in the code.
 
+## Offline operation (L12)
+
+The threat here is not an attacker; it is a tablet that has been out of signal for half an
+hour and then reconnects. What it must never do is quietly win.
+
+**Every draft edit declares what it saw.** `PATCH /pts/{id}` requires `visto_em`, the
+`atualizado_em` the client read before editing. If the permit moved on in between, the write
+is refused with `409 edicao_desatualizada` and nothing is lost — the correction that arrived
+first stays, and the person who arrived second is told when it changed and asked to reload.
+Required rather than optional, because a client that does not say what it saw cannot claim it
+overwrote nothing.
+
+**Signing a step requires connectivity, deliberately.** Transitions are not queued. The rule
+engine's verdict holds at the instant of the transition, so queueing a release would let
+someone walk away from the screen believing they authorised work that the server has not yet
+agreed to. Reading works offline; authorising does not, and the screen says so.
+
+**The queue never resolves a conflict on its own.** A queued edit that comes back `409` is
+marked and shown on the permit's own screen with the option to discard it. Retrying it
+automatically would be picking a winner in the dark.
+
+**The service worker caches reads only.** No `POST`, no `PATCH`, and `/auth` is excluded from
+the cache entirely — a token in the cache is a credential left on the disk of a shared deck
+tablet. Data served from the cache carries `X-Aegis-Do-Cache`, and the screen labels it, so
+nobody decides from a figure that may be hours old believing it is current. Only `200`
+responses are cached: caching a `401` would keep showing "no access" after the login came
+back.
+
+**Writes never pass through the service worker.** A `POST` replayed silently by a worker is
+the classic origin of the duplicate nobody can explain afterwards; the queue lives in the
+application, where what is pending can be shown.
+
+Two limits worth stating: the queue is in `localStorage`, which is synchronous and around
+5 MB — enough for draft corrections, not for offline attachments; and the token also lives in
+`localStorage`, which is readable by any script on the origin. The second is only acceptable
+because the application ships no third-party script and no CDN — the moment either appears,
+this needs revisiting along with the L13 hardening.
+
 ## Data integrity
 
 - Foreign keys are enforced on SQLite (`PRAGMA foreign_keys=ON` on every connection).

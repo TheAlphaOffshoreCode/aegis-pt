@@ -56,3 +56,20 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 def index() -> FileResponse:
     """Entrega o shell do PWA."""
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/sw.js", include_in_schema=False)
+def service_worker() -> FileResponse:
+    """O service worker precisa ser servido da raiz.
+
+    O escopo de um service worker é a pasta de onde ele veio: em `/static/sw.js` ele só
+    controlaria `/static/`, e não a aplicação. Servi-lo aqui dá a ele o escopo `/` sem
+    depender de cabeçalho `Service-Worker-Allowed`.
+    """
+    return FileResponse(
+        STATIC_DIR / "sw.js",
+        media_type="application/javascript",
+        # Sem isto o navegador pode servir um worker velho do próprio cache HTTP e a
+        # atualização do aplicativo nunca chega ao tablet.
+        headers={"Cache-Control": "no-cache"},
+    )

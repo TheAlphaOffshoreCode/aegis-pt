@@ -220,6 +220,23 @@ Deviations: `SUSPENSA` (only from `EM_EXECUCAO`) and `REJEITADA` (returns to `RA
 - **Derived fields stay derived.** `responsavel` comes from the escalation level at read time.
   Storing it would leave old rows pointing at whoever used to be responsible the day the
   ladder in `exigencias.py` changed.
+- **`PATCH /pts/{id}` requires `visto_em`, and `versao` cannot replace it.** `versao` is the
+  signable document revision and only moves when the permit leaves the draft, so it does not
+  change between two draft edits — using it as the concurrency token would detect nothing.
+  `atualizado_em` is what actually moves on every write.
+- **The service worker is served from `/sw.js`, not `/static/sw.js`.** A worker's scope is the
+  directory it came from; under `/static/` it would control only the assets, never the app.
+  The route also sends `Cache-Control: no-cache`, or the browser serves an old worker from its
+  own HTTP cache and the update never reaches the tablet.
+- **`ARQUIVOS_DO_SHELL` in `sw.js` is all-or-nothing.** One wrong path and `install` rejects,
+  so the app never works offline at all — silently, because nothing else breaks. There is a
+  test comparing that list against the files on disk.
+- **Transitions are never queued offline.** Only draft edits are. The rule engine decides at
+  the moment of the transition; a queued release would let someone leave the screen believing
+  they authorised work the server may still refuse.
+- **No CDN, and that includes fonts.** The identity fonts are vendored under `static/fonts/`
+  with their OFL licence. A font that only loads online is a visual identity that disappears
+  exactly offshore, where the product is used.
 
 ## Conventions
 

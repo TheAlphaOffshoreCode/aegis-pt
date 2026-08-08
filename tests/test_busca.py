@@ -211,6 +211,7 @@ def test_versoes_mostram_o_diff_entre_revisoes(
             "descricao": "Solda em suporte de tubulação — escopo detalhado",
             "valida_de": atual.valida_de.isoformat(),
             "valida_ate": atual.valida_ate.isoformat(),
+            "visto_em": atual.atualizado_em.isoformat(),
         },
     )
     client.post(f"/pts/{pt_id}/transicoes", headers=dono, json={"destino": "VALIDACAO"})

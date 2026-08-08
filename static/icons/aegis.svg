@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="AEGIS PT">
+  <rect width="128" height="128" rx="20" fill="#0b0f14"/>
+  <path d="M64 20 L104 36 V66c0 25-17 38-40 46-23-8-40-21-40-46V36Z"
+        fill="none" stroke="#38bdf8" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M46 66 L58 78 L84 50" fill="none" stroke="#f59e0b" stroke-width="8"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

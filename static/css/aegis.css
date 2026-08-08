@@ -1,18 +1,48 @@
 /* AEGIS PT — identidade visual. Todo token de cor e tipografia nasce aqui. */
 
+@font-face {
+  font-family: "Oswald";
+  src: url("/static/fonts/oswald-500.woff2") format("woff2");
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Oswald";
+  src: url("/static/fonts/oswald-600.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/static/fonts/jetbrains-mono-400.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/static/fonts/jetbrains-mono-600.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+
 :root {
   --void: #0b0f14;
   --void-alto: #121821;
+  --void-topo: #182231;
   --regua: #1e2937;
   --cyan: #38bdf8;
   --amber: #f59e0b;
+  --vermelho: #f87171;
+  --verde: #4ade80;
   --texto: #e2e8f0;
   --texto-fraco: #7d8b9c;
 
-  /* Oswald e JetBrains Mono entram como arquivos locais (woff2); até lá, os fallbacks valem. */
   --fonte-titulo: "Oswald", "Bahnschrift", "Arial Narrow", sans-serif;
   --fonte-dado: "JetBrains Mono", "Cascadia Mono", "Consolas", monospace;
   --fonte-corpo: system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --raio: 3px;
+  --gap: 12px;
 }
 
 * {
@@ -27,87 +57,363 @@ body {
   font-family: var(--fonte-corpo);
   font-size: 14px;
   line-height: 1.5;
+  /* A área de toque é uma luva molhada num convés inclinado: nada abaixo de 44 px. */
+  -webkit-tap-highlight-color: transparent;
 }
 
-header {
+h1, h2, h3 {
+  font-family: var(--fonte-titulo);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+h1 { font-size: 19px; }
+h2 { font-size: 15px; color: var(--texto-fraco); }
+h3 { font-size: 13px; }
+
+code, .dado, .numero {
+  font-family: var(--fonte-dado);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- estrutura ------------------------------------------------------------------------ */
+
+.topo {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding: 14px 20px;
+  align-items: center;
+  gap: var(--gap);
+  padding: 10px 16px;
+  background: var(--void-topo);
   border-bottom: 1px solid var(--regua);
 }
 
-h1 {
-  margin: 0;
-  font-family: var(--fonte-titulo);
-  font-size: 20px;
-  font-weight: 500;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+.topo h1 {
+  color: var(--cyan);
 }
 
-header span {
+.topo .marca {
   font-family: var(--fonte-dado);
-  font-size: 11px;
+  font-size: 10px;
   color: var(--texto-fraco);
+  letter-spacing: 0.14em;
+}
+
+.topo .espaco {
+  margin-left: auto;
+}
+
+nav.abas {
+  display: flex;
+  gap: 2px;
+  padding: 0 12px;
+  background: var(--void-alto);
+  border-bottom: 1px solid var(--regua);
+  overflow-x: auto;
+}
+
+nav.abas a {
+  padding: 11px 14px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  color: var(--texto-fraco);
+  text-decoration: none;
+  font-family: var(--fonte-titulo);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+
+nav.abas a.ativa {
+  color: var(--cyan);
+  border-bottom-color: var(--cyan);
 }
 
 main {
-  padding: 20px;
+  padding: 16px;
+  max-width: 900px;
+  margin: 0 auto;
 }
 
 .painel {
-  max-width: 560px;
-  border: 1px solid var(--regua);
   background: var(--void-alto);
+  border: 1px solid var(--regua);
+  border-radius: var(--raio);
+  padding: 14px 16px;
+  margin-bottom: var(--gap);
 }
 
-.painel h2 {
+.painel > h2 {
+  margin-bottom: 10px;
+}
+
+/* --- dados ---------------------------------------------------------------------------- */
+
+dl {
   margin: 0;
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--regua);
-  font-family: var(--fonte-titulo);
-  font-size: 12px;
-  font-weight: 400;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--texto-fraco);
+  display: grid;
+  gap: 6px;
 }
 
 .linha {
   display: flex;
   justify-content: space-between;
-  gap: 20px;
-  padding: 7px 14px;
-  border-bottom: 1px solid var(--regua);
-  font-family: var(--fonte-dado);
-  font-size: 12px;
-}
-
-.linha:last-child {
-  border-bottom: 0;
+  gap: var(--gap);
+  border-bottom: 1px dotted var(--regua);
+  padding-bottom: 5px;
 }
 
 .linha dt {
   color: var(--texto-fraco);
-  letter-spacing: 0.06em;
+  font-size: 12px;
   text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .linha dd {
   margin: 0;
+  font-family: var(--fonte-dado);
+  text-align: right;
+}
+
+.grade {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: var(--gap);
+}
+
+.metrica {
+  background: var(--void);
+  border: 1px solid var(--regua);
+  border-radius: var(--raio);
+  padding: 10px 12px;
+}
+
+.metrica .valor {
+  font-family: var(--fonte-dado);
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.metrica .rotulo {
+  font-size: 11px;
+  color: var(--texto-fraco);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* A cor vai no próprio número, não numa tarja ao lado: é o número que a pessoa lê. */
+.metrica.alerta .valor { color: var(--amber); }
+.metrica.grave .valor { color: var(--vermelho); }
+.metrica.grave { border-color: #4d2222; }
+
+/* --- chips e listas ------------------------------------------------------------------- */
+
+.chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border: 1px solid var(--regua);
+  border-radius: 999px;
+  background: var(--void);
+  font-family: var(--fonte-dado);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.chip.online { color: var(--verde); border-color: #1f4536; }
+.chip.falha, .chip.offline { color: var(--amber); border-color: #4a3714; }
+.chip.bloqueante { color: var(--vermelho); border-color: #4d2222; }
+.chip.atencao { color: var(--amber); border-color: #4a3714; }
+
+.cartao {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--void-alto);
+  border: 1px solid var(--regua);
+  border-radius: var(--raio);
+  padding: 11px 13px;
+  margin-bottom: 8px;
+  color: inherit;
+  text-decoration: none;
+  font: inherit;
+}
+
+/* Só o cartão que leva a algum lugar se comporta como clicável. */
+a.cartao, button.cartao {
+  cursor: pointer;
+}
+
+a.cartao:hover, button.cartao:hover {
+  border-color: var(--cyan);
+}
+
+a.cartao:focus-visible, button.cartao:focus-visible {
+  /* Borda sozinha não serve como indicador de foco: fina demais e some no escuro. */
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+.cartao .cabeca {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cartao .numero {
+  font-weight: 600;
   color: var(--cyan);
 }
 
-.chip {
-  padding: 1px 7px;
-  border: 1px solid currentColor;
-  font-family: var(--fonte-dado);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.cartao .descricao {
+  color: var(--texto-fraco);
+  font-size: 13px;
+  margin-top: 3px;
 }
 
-.chip.falha {
+/* O nível do alerta é dito por um chip com o número, não só por cor: quem não distingue
+   âmbar de vermelho precisa da mesma informação, e no sol do convés a cor some. */
+.cartao.nivel-1 { border-color: #4a3714; }
+.cartao.nivel-2 { border-color: #4d2222; }
+
+/* --- formulários e ações -------------------------------------------------------------- */
+
+label {
+  display: block;
+  margin-bottom: 10px;
+}
+
+label .rotulo {
+  display: block;
+  font-size: 12px;
+  color: var(--texto-fraco);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+input, select, textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 11px;
+  background: var(--void);
+  border: 1px solid var(--regua);
+  border-radius: var(--raio);
+  color: var(--texto);
+  font-family: var(--fonte-dado);
+  font-size: 14px;
+}
+
+textarea {
+  min-height: 76px;
+  resize: vertical;
+  font-family: var(--fonte-corpo);
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: 2px solid var(--cyan);
+  outline-offset: -1px;
+  border-color: var(--cyan);
+}
+
+input[type="checkbox"] {
+  width: 22px;
+  min-height: 22px;
+  accent-color: var(--cyan);
+}
+
+button {
+  min-height: 44px;
+  padding: 10px 18px;
+  background: var(--cyan);
+  color: var(--void);
+  border: none;
+  border-radius: var(--raio);
+  font-family: var(--fonte-titulo);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+button.secundario {
+  background: transparent;
+  color: var(--cyan);
+  border: 1px solid var(--cyan);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* --- avisos --------------------------------------------------------------------------- */
+
+.aviso {
+  border: 1px solid #4a3714;
+  border-radius: var(--raio);
+  background: var(--void-alto);
+  padding: 10px 13px;
+  margin-bottom: var(--gap);
+  font-size: 13px;
+}
+
+.aviso.erro { border-color: #4d2222; }
+.aviso.ok { border-color: #1f4536; }
+
+/* O título carrega a severidade em palavra, e a cor apenas reforça. */
+.aviso .titulo {
+  font-family: var(--fonte-titulo);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 12px;
+  margin-bottom: 3px;
   color: var(--amber);
 }
+
+.aviso.erro .titulo { color: var(--vermelho); }
+.aviso.ok .titulo { color: var(--verde); }
+
+.vazio {
+  color: var(--texto-fraco);
+  text-align: center;
+  padding: 26px 12px;
+  font-size: 13px;
+}
+
+.pendencia {
+  display: flex;
+  gap: 9px;
+  align-items: baseline;
+  padding: 7px 0;
+  border-bottom: 1px dotted var(--regua);
+  font-size: 13px;
+}
+
+.pendencia:last-child { border-bottom: none; }
+
+/* Não há bloco de `prefers-reduced-motion` porque não há animação nem transição nenhuma
+   nesta folha. Um `animation: none !important` global aqui seria código morto que ainda por
+   cima mataria qualquer feedback de estado que viesse a existir. */

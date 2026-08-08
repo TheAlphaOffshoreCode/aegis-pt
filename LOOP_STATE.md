@@ -17,7 +17,7 @@ Fonte de verdade para retomar o trabalho. Atualizado ao fim de cada loop.
 | L9 | IA: busca em linguagem natural | ✅ concluído | 2026-08-07 |
 | L10 | IA: geração de rascunho | ✅ concluído | 2026-08-08 |
 | L11 | Indicadores e alertas | ✅ concluído | 2026-08-08 |
-| L12 | PWA e operação offline | — | — |
+| L12 | PWA e operação offline | ✅ concluído | 2026-08-08 |
 | L13 | Auditoria de segurança e fechamento | — | — |
 
 ---
@@ -613,19 +613,89 @@ contagem não recupera PT nenhuma, e a regra 3 **como está implementada** desca
 responderia "não encontrei". Resolver isso é decidir o que conta como fonte, e essa decisão é
 do William. Fica como P40.
 
+---
+
+## L12 — PWA e operação offline (2026-08-08)
+
+**Entregue:** as telas de verdade (login, lista, detalhe com formulário dinâmico e fluxo,
+painel), manifesto, service worker, fontes locais e — o que dá nome ao loop — sincronização
+que não atropela em silêncio.
+**Aceite:** 213 testes passando (18 novos), incluindo o **teste obrigatório do contrato**.
+Contra o banco de desenvolvimento: a segunda edição sobre uma leitura velha foi recusada com
+`edicao_desatualizada` e o que estava gravado continuou gravado.
+
+### Arquivos tocados
+
+| Arquivo | Papel |
+|---|---|
+| `app/services/permissoes.py` | `atualizar_pt` confere `visto_em` antes de gravar |
+| `app/schemas/permissao.py` | `visto_em` obrigatório no `PermissaoTrabalhoUpdate` |
+| `app/main.py` | rota `GET /sw.js`, servida da raiz para o escopo cobrir a aplicação |
+| `static/index.html`, `static/js/app.js` | shell e a aplicação inteira (roteador, telas, fila) |
+| `static/css/aegis.css` | sistema visual: tokens, `@font-face`, componentes |
+| `static/sw.js` | shell cache-first, dados network-first, escrita nenhuma |
+| `static/manifest.webmanifest`, `static/icons/` | instalação e ícones (comum + maskable) |
+| `static/fonts/` | Oswald e JetBrains Mono locais, com a licença OFL junto |
+| `tests/test_offline.py`, `tests/test_pwa.py` | 18 testes |
+
+### O teste obrigatório, e por que `versao` não servia
+
+O contrato exige desde o L0: *sincronização offline nunca sobrescreve mudança remota em
+silêncio*. Hoje a edição não tinha controle nenhum — dois clientes no mesmo rascunho, o
+último gravava por cima.
+
+O reflexo era usar `versao` como token de concorrência. Não funciona: `versao` é a revisão
+assinável do documento e **só sobe quando a PT sai do rascunho**, então entre duas edições de
+rascunho ela não muda e não detectaria nada. Quem muda a cada escrita é `atualizado_em`.
+
+Daí `visto_em`: o cliente devolve o `atualizado_em` que leu, e o servidor recusa se a PT
+andou nesse meio-tempo. Obrigatório, não opcional — cliente que não diz o que viu não tem
+como afirmar que não atropelou ninguém. Quebra de contrato no `PATCH`, declarada; três testes
+antigos foram ajustados.
+
+### Decisões
+
+- **Ler é offline, assinar não.** Transição exige rede de propósito: o veredito do motor vale
+  no instante da transição, e enfileirar uma liberação faria alguém sair da tela acreditando
+  que autorizou um serviço que o servidor ainda pode recusar. A tela diz isso, não esconde.
+- **A fila não resolve conflito sozinha.** Item que volta `409` fica marcado e aparece na tela
+  da própria PT, com a opção de descartar. Reenviar por conta própria seria escolher um
+  vencedor no escuro.
+- **O service worker não vê escrita.** Só `GET`, e `/auth` fora do cache — token em cache é
+  credencial deixada no disco de um tablet compartilhado. Dado servido da cópia local vem com
+  `X-Aegis-Do-Cache` e a tela avisa: ninguém decide a partir de número velho achando que é de
+  agora.
+- **Fontes embarcadas.** Sem CDN em produção, fonte que só carrega online é identidade que
+  desaparece justamente offshore. 65 KB, licença OFL junto (P1 resolvida).
+- **`GET /sw.js` na raiz.** Em `/static/` o escopo do worker seria `/static/` e ele não
+  controlaria a aplicação. Com `Cache-Control: no-cache`, senão o navegador serve um worker
+  velho e a atualização nunca chega ao tablet.
+
+### O que a skill de design achou
+
+`/impeccable audit` acusou três ocorrências do mesmo padrão: barra de cor na lateral do
+cartão — o tique mais reconhecível de interface gerada por IA. Corrigidas, e a correção
+melhorou a acessibilidade em vez de só agradar o detector: onde a barra carregava informação
+(nível do alerta), o nível passou a ser **escrito num chip**, porque cor sozinha não serve
+para quem não distingue âmbar de vermelho nem para quem está no sol do convés.
+
+Na mesma revisão saíram mais três: `cursor: pointer` em cartão que não clica, foco visível
+só por mudança de borda (fina demais no escuro) e um bloco `prefers-reduced-motion` que era
+código morto — não há animação nenhuma nesta folha. Detector limpo no fim.
+
 ### Pendências abertas
 
 | # | Pendência | Loop de destino |
 |---|---|---|
-| P1 | Fontes Oswald e JetBrains Mono servidas localmente (hoje só fallback de sistema) | L11/L12 |
-| P2 | `manifest.json` e service worker | L12 |
+| ~~P1~~ | ~~Fontes só em fallback de sistema~~ — Oswald e JetBrains Mono embarcadas em `static/fonts/`, com a OFL junto | resolvido no L12 |
+| ~~P2~~ | ~~Sem manifesto e sem service worker~~ — `manifest.webmanifest`, ícones e `sw.js` na raiz | resolvido no L12 |
 | P3 | Cabeçalhos de segurança, rate limiting, tratamento de erro sem stack | L13 |
 | ~~P4~~ | ~~Dependências de auth~~ — `argon2-cffi` e `pyjwt` no `requirements.txt` | resolvido no L2 |
 | ~~P5~~ | ~~Dependências de IA no `requirements.txt`~~ — `anthropic>=0.121`; índice vetorial não foi preciso, as ferramentas consultam o banco | resolvido no L9 |
 | P6 | `starlette.testclient` avisa que `httpx` está depreciado em favor de `httpx2` — sem efeito hoje | reavaliar em L13 |
 | ~~P7~~ | ~~Repositório sem remote~~ — publicado em TheAlphaOffshoreCode/aegis-pt, CI verde | resolvido em 05/08/2026 |
 | ~~P8~~ | ~~`security-review` sem linha de base~~ — destravada pelo commit inicial | resolvido em 05/08/2026 |
-| P9 | Skill `impeccable` aplicada às telas reais; o shell atual é diagnóstico | L11/L12 |
+| ~~P9~~ | ~~`impeccable` nunca aplicada a tela real~~ — telas construídas e auditadas; detector limpo | resolvido no L12 |
 | ~~P10~~ | ~~Coluna `respostas` especulativa~~ — virou o campo onde o formulário dinâmico grava | resolvido no L3 |
 | ~~P11~~ | ~~`AlertaRead` sem consumidor~~ — `/alertas` entregue, com `mensagem`, `unidade_id` e `responsavel` derivado | resolvido no L11 |
 | ~~P12~~ | ~~`usuario` sem credencial~~ — `senha_hash`, `ultimo_acesso` e `unidade_id` criados | resolvido no L2 |
@@ -660,6 +730,11 @@ do William. Fica como P40.
 | P41 | **Nada agenda a sincronização de alertas.** `/alertas/sincronizar` é uma rota; sem um cron chamando, o painel envelhece em silêncio. Um deploy que esquecer a linha do crontab tem quadro parado, não errado | L12/L13 (operação) |
 | P42 | `sincronizar()` varre todas as PTs não encerradas e todas as certificações a cada chamada. Com acervo grande vira leitura completa por passagem — mesma família da P27 | quando o acervo crescer |
 | P43 | Alerta não tem reconhecimento humano: só `resolvido` automático pela condição sumir. Não dá para dizer "vi, estou tratando", e o `CANCELADO` do enum não tem caminho de código | quando a operação pedir |
+| P44 | Transição não é enfileirada offline, por decisão. Se a operação precisar assinar sem sinal, exige repensar onde o motor de regras roda — não é ajuste de fila | decisão de produto |
+| P45 | Fila e token vivem em `localStorage`: síncrono, ~5 MB e legível por qualquer script da origem. Só é aceitável porque não há script de terceiro nem CDN | L13 |
+| P46 | Anexar arquivo offline não existe: a fila guarda correção de rascunho, não binário. Exigiria IndexedDB | quando pedirem |
+| P47 | Transição sobre leitura velha não é barrada: alguém pode aprovar o que não viu. Não é sobrescrita (por isso ficou fora do L12), mas é da mesma família — `visto_em` na transição resolveria | L13 |
+| P48 | Nenhum teste roda o JavaScript: não há runner no projeto. As telas foram verificadas com `node --check`, pelos contratos dos endpoints e rodando a aplicação | quando houver caso |
 
 ### Ponto exato de retomada
 
@@ -693,12 +768,18 @@ responde 2 PTs no escopo, uma em `LIBERACAO` e uma em `RASCUNHO`.
 **Para manter os alertas vivos:** algo precisa chamar `POST /alertas/sincronizar`
 periodicamente (P41). Não há agendador no processo, de propósito.
 
+L12 fechado e verificado: 213 testes passando, o obrigatório do contrato entre eles. Contra o
+banco de desenvolvimento, a edição sobre leitura velha foi recusada e nada foi perdido.
+`/sw.js`, o manifesto e as quatro fontes respondem 200.
+
 Próximo passo: **decisão do William entre dois caminhos.**
 
-**L12 — PWA e operação offline.** O que falta para virar produto de verdade: as telas (hoje só
-o shell diagnóstico), `manifest.json`, service worker e sincronização offline sem sobrescrever
-mudança remota em silêncio — que é um dos testes obrigatórios do contrato e ainda não existe.
-É onde a P1 (fontes), a P2 (PWA) e a P9 (`impeccable` nas telas reais) se resolvem juntas.
+**L13 — Auditoria de segurança e fechamento.** O último do contrato, e o que mais dívida
+declarada tem esperando: cabeçalhos de segurança e rate limiting (P3), limite de tentativas de
+login e revogação de token (P14), revisão de injeção de prompt (P33), limite nas rotas de IA
+(P34, P39), *magic bytes* nos anexos (P30), token fora do `localStorage` (P45) e transição
+sobre leitura velha (P47). É o loop que existe para transformar "declarado em aberto" em
+resolvido ou em risco aceito por escrito.
 
 **L8.5 — Acervo legado e OCR** (ainda proposto). Escopo próprio: modelo `documento_legado`,
 upload em lote, OCR com Tesseract, indexação do texto extraído e vínculo opcional com PT. Traz

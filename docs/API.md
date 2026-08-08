@@ -100,6 +100,16 @@ A permit outside the caller's scope answers `404`, not `403` — "you may not se
 already confirms it exists. `PATCH` only edits a permit still in `RASCUNHO`, and only by its
 requester; anything else is a state transition, which is L5.
 
+**`PATCH` requires `visto_em`** — the `atualizado_em` the client read before editing, echoed
+back unchanged. If the permit moved on in between, the edit is refused with `409` and
+`edicao_desatualizada`, naming when it changed. This is what stops a tablet that has been
+offline for half an hour from silently erasing someone else's correction on reconnect; the
+way out is to reload and redo the edit, not to force the write. The field is **required** on
+purpose: a client that does not say what it saw cannot claim it overwrote nothing.
+
+A resend of an already-accepted edit is refused for the same reason. The server cannot tell a
+duplicate from a stale write, and treating them alike is exactly what would reopen the hole.
+
 ### `GET /pts/{id}/versoes` · `GET /pts/{id}/dossie`
 
 `versoes` returns the history: each revision's snapshot plus a field-by-field `diff` against
@@ -359,6 +369,8 @@ Risk (L4): `janela_vencida`, `janela_excede_o_maximo`, `janela_menor_que_a_durac
 Flow (L5): `transicao_invalida`, `motivo_obrigatorio`.
 
 Trail (L6): `evento_inexistente`, `compensacao_de_compensacao`.
+
+Offline sync (L12): `edicao_desatualizada`.
 
 Attachments (L7): `extensao_nao_permitida`, `arquivo_vazio`, `arquivo_muito_grande`,
 `pt_arquivada`, `anexo_nao_removivel`, `anexo_fora_da_area`.

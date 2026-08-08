@@ -73,7 +73,17 @@ class PermissaoTrabalhoCreate(_PermissaoTrabalhoEntrada):
 
 
 class PermissaoTrabalhoUpdate(_PermissaoTrabalhoEntrada):
-    """Correção de rascunho. A unidade não muda: mudá-la seria emitir outra PT."""
+    """Correção de rascunho. A unidade não muda: mudá-la seria emitir outra PT.
+
+    `visto_em` é o `atualizado_em` que o cliente leu antes de editar, devolvido como veio. É o
+    que impede a edição de sobrescrever em silêncio uma alteração que chegou no meio — o caso
+    que o L12 precisa cobrir, porque um tablet offshore edita offline e envia meia hora depois.
+
+    Obrigatório de propósito: um cliente que não diz o que viu não tem como afirmar que não
+    atropelou ninguém.
+    """
+
+    visto_em: datetime
 
 
 class PermissaoTrabalhoRead(ORMDatado):
