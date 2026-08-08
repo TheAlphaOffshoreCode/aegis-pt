@@ -37,6 +37,7 @@ class Sincronizacao:
     abertos: int = 0
     escalonados: int = 0
     resolvidos: int = 0
+    reabertos: int = 0
 
 
 def aplicar_escopo(consulta: Select, usuario: Usuario) -> Select:
@@ -75,11 +76,13 @@ def sincronizar(db: Session, agora: datetime | None = None) -> Sincronizacao:
     resultado = Sincronizacao()
 
     condicoes = {condicao.chave: condicao for condicao in _condicoes(db, agora)}
+    # **Todos** os alertas, resolvidos inclusive. A identidade `(tipo, entidade, entidade_id)`
+    # tem UNIQUE no banco: filtrar os resolvidos aqui faria a condição que reaparece cair no
+    # `db.add` e estourar a constraint. Acontece de verdade — PT suspensa com a janela vencida
+    # e depois retomada resolve o alerta e o traz de volta.
     existentes = {
         (alerta.tipo, alerta.entidade, alerta.entidade_id): alerta
-        for alerta in db.scalars(
-            select(Alerta).where(Alerta.status != StatusAlerta.RESOLVIDO)
-        ).all()
+        for alerta in db.scalars(select(Alerta)).all()
     }
 
     for chave, condicao in condicoes.items():
@@ -107,13 +110,27 @@ def sincronizar(db: Session, agora: datetime | None = None) -> Sincronizacao:
         # não diz o mesmo que há 1). O `criado_em` é que não se mexe: é desde quando dói.
         alerta.mensagem = condicao.mensagem
         alerta.prazo = condicao.prazo
+
+        if alerta.status == StatusAlerta.RESOLVIDO:
+            # O problema voltou. Reabrir a linha existente preserva desde quando ele apareceu
+            # pela primeira vez — abrir outra faria parecer que é a estreia.
+            alerta.status = (
+                StatusAlerta.ESCALONADO if nivel > 0 else StatusAlerta.ABERTO
+            )
+            alerta.nivel_escalonamento = nivel
+            resultado.reabertos += 1
+            continue
+
         if nivel > alerta.nivel_escalonamento:
             alerta.nivel_escalonamento = nivel
             alerta.status = StatusAlerta.ESCALONADO
             resultado.escalonados += 1
 
     for chave, alerta in existentes.items():
-        if chave not in condicoes and alerta.status != StatusAlerta.CANCELADO:
+        if chave not in condicoes and alerta.status in (
+            StatusAlerta.ABERTO,
+            StatusAlerta.ESCALONADO,
+        ):
             # A condição sumiu: a PT foi encerrada, a certificação foi renovada. O alerta é
             # resolvido, não apagado — sumir sem deixar rastro esconderia que ele existiu.
             alerta.status = StatusAlerta.RESOLVIDO

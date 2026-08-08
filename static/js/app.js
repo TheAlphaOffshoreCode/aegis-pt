@@ -13,8 +13,23 @@
 
 const API = {
   token: localStorage.getItem("aegis_token"),
+  // De quem é a sessão atual. O tablet do convés é compartilhado, então "quem está logado"
+  // não é uma pergunta retórica: dela dependem o que o cache pode devolver e o que a fila
+  // pode enviar.
+  matricula: localStorage.getItem("aegis_matricula"),
   usuario: null,
 };
+
+/** Apaga a cópia local de dados autenticados.
+ *
+ * Chamada em toda troca de identidade. Sem isto, quem entrasse depois leria offline as PTs de
+ * quem entrou antes: o service worker guarda por URL, e a URL não tem dono.
+ */
+async function limparCacheDeDados() {
+  if (!("caches" in window)) return;
+  const nomes = await caches.keys();
+  await Promise.all(nomes.filter((n) => n.endsWith("-dados")).map((n) => caches.delete(n)));
+}
 
 const tela = document.getElementById("tela");
 const abas = document.getElementById("abas");
@@ -116,8 +131,20 @@ const Fila = {
   },
   enfileirar(item) {
     const itens = Fila.ler();
-    itens.push({ ...item, id: Date.now(), enfileirado_em: new Date().toISOString() });
+    itens.push({
+      ...item,
+      id: Date.now(),
+      enfileirado_em: new Date().toISOString(),
+      // De quem é esta correção. Sem a marca, o item sairia com o token de quem estivesse
+      // logado na hora do reenvio — e a trilha registraria a pessoa errada como autora.
+      matricula: API.matricula,
+    });
     Fila.gravar(itens);
+  },
+
+  /** Só o que pertence a quem está logado agora. */
+  minhas() {
+    return Fila.ler().filter((i) => i.matricula === API.matricula);
   },
   remover(id) {
     Fila.gravar(Fila.ler().filter((i) => i.id !== id));
@@ -126,7 +153,7 @@ const Fila = {
     Fila.gravar(Fila.ler().map((i) => (i.id === id ? { ...i, conflito: mensagem } : i)));
   },
   pintar() {
-    const itens = Fila.ler();
+    const itens = Fila.minhas();
     const conflitos = itens.filter((i) => i.conflito).length;
     chipFila.hidden = itens.length === 0;
     chipFila.textContent = conflitos
@@ -136,7 +163,9 @@ const Fila = {
   },
 
   async enviar() {
-    for (const item of Fila.ler()) {
+    // `minhas()`, não `ler()`: item de outra pessoa sairia com o meu token, e a trilha
+    // registraria a autoria errada numa PT.
+    for (const item of Fila.minhas()) {
       // Item em conflito não é reenviado sozinho: quem decide o que fazer com ele é a pessoa,
       // na tela da PT. Reenviar por conta própria seria escolher um vencedor no escuro.
       if (item.conflito) continue;
@@ -189,8 +218,15 @@ function telaLogin() {
           method: "POST",
           body: JSON.stringify({ matricula: matricula.value, senha: senha.value }),
         });
+        // Entrou outra pessoa neste aparelho: a cópia local da anterior não pode sobreviver.
+        if (API.matricula && API.matricula !== matricula.value) {
+          await limparCacheDeDados();
+        }
         API.token = dados.access_token;
+        API.matricula = matricula.value;
         localStorage.setItem("aegis_token", API.token);
+        localStorage.setItem("aegis_matricula", API.matricula);
+        Fila.pintar();
         location.hash = "#/pts";
       } catch (erro) {
         destino.append(aviso(erro.message, "erro", "Não foi possível entrar"));
@@ -318,7 +354,7 @@ async function telaDetalhe(id) {
     secao.append(aviso("Sem conexão: esta PT é a última cópia recebida.", "", "Dado local"));
   }
 
-  const naFila = Fila.ler().filter((i) => i.caminho === `/pts/${pt.id}`);
+  const naFila = Fila.minhas().filter((i) => i.caminho === `/pts/${pt.id}`);
   for (const item of naFila) {
     secao.append(
       item.conflito
@@ -585,8 +621,14 @@ function metrica(rotulo, valor, tipo = "") {
 
 function sair() {
   API.token = null;
+  API.matricula = null;
   API.usuario = null;
   localStorage.removeItem("aegis_token");
+  localStorage.removeItem("aegis_matricula");
+  // A cópia local de dados autenticados sai junto. A fila fica: é trabalho ainda não enviado,
+  // está marcada com o dono e só sai quando ele voltar.
+  limparCacheDeDados();
+  Fila.pintar();
   location.hash = "#/login";
 }
 

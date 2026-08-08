@@ -13,7 +13,7 @@ audit trail that survives an incident investigation.
 [![CI](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml/badge.svg)](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Status: L13 of L13 — complete](https://img.shields.io/badge/status-L13_of_L13_complete-22c55e.svg)](#roadmap)
-[![Tests: 232](https://img.shields.io/badge/tests-232_passing-22c55e.svg)](#tests)
+[![Tests: 245](https://img.shields.io/badge/tests-245_passing-22c55e.svg)](#tests)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Offline capable](https://img.shields.io/badge/PWA-offline_reads-0ea5e9.svg)](#offshore-constraints)
 
@@ -243,7 +243,7 @@ way to create accounts with a known password.
 python -m pytest -q
 ```
 
-Two hundred and thirty-two tests, none of which reach the network — the AI loop is exercised
+Two hundred and forty-five tests, none of which reach the network — the AI loop is exercised
 with an injected client, and the suite forces the API key empty so a key sitting in a
 developer's `.env` cannot make the tests call out and bill. The ones worth naming are those
 that fail loudly the day a guarantee quietly stops holding:

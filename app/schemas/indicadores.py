@@ -20,5 +20,6 @@ class SincronizacaoRead(BaseModel):
     """O que a passagem de sincronização fez."""
 
     abertos: int
+    reabertos: int
     escalonados: int
     resolvidos: int

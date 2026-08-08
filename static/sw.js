@@ -13,7 +13,7 @@
  * duplicata que ninguém explica depois.
  */
 
-const VERSAO = "aegis-v1";
+const VERSAO = "aegis-v2";
 const SHELL = `${VERSAO}-shell`;
 const DADOS = `${VERSAO}-dados`;
 
@@ -67,8 +67,25 @@ self.addEventListener("fetch", (evento) => {
   if (url.origin !== self.location.origin) return;
 
   if (ehDoShell(url)) {
+    // Cache primeiro (é o que faz abrir sem sinal), **e** revalidação em segundo plano.
+    //
+    // Só cache-first seria uma armadilha de implantação: com a versão fixa, uma correção no
+    // `app.js` nunca chegaria a um tablet que já instalou o aplicativo — ele serviria o
+    // arquivo velho para sempre, sem erro nenhum aparecendo. Depender de lembrar de trocar a
+    // `VERSAO` a cada correção é depender de memória humana para uma falha silenciosa.
     evento.respondWith(
-      caches.match(requisicao).then((emCache) => emCache || fetch(requisicao))
+      caches.open(SHELL).then(async (cache) => {
+        const emCache = await cache.match(requisicao);
+        const daRede = fetch(requisicao)
+          .then((resposta) => {
+            if (resposta.ok) cache.put(requisicao, resposta.clone());
+            return resposta;
+          })
+          .catch(() => null);
+        // Sem cópia local, espera a rede. Com cópia, responde na hora e atualiza atrás:
+        // o próximo carregamento já pega o novo.
+        return emCache || (await daRede) || Response.error();
+      })
     );
     return;
   }

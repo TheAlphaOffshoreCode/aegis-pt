@@ -24,20 +24,48 @@ class Limite:
 
 
 class Limitador:
-    """Conta tentativas por chave numa janela deslizante."""
+    """Conta tentativas por chave numa janela deslizante.
+
+    A varredura do que venceu é **por tempo, no máximo uma por janela**, e não por tamanho do
+    dicionário. Varrer por tamanho parece equivalente e não é: com muitas chaves ainda dentro
+    da janela, toda tentativa dispararia uma passagem completa que não libera nada — trocar-se-ia
+    um esgotamento de memória por um de CPU, que chega antes.
+    """
 
     def __init__(self, limite: Limite) -> None:
         self.limite = limite
         self._marcas: dict[str, deque[float]] = defaultdict(deque)
+        self._varrido_em: float | None = None
 
     def _limpar(self, marcas: deque[float], agora: float) -> None:
         while marcas and agora - marcas[0] > self.limite.janela_segundos:
             marcas.popleft()
 
+    def _talvez_varrer(self, agora: float) -> None:
+        """Descarta chaves sem tentativa dentro da janela, no máximo uma vez por janela.
+
+        O custo é uma passagem O(n) por janela, e o que fica retido é o tráfego de cerca de
+        duas janelas — que é o que o limitador precisa lembrar de qualquer forma.
+        """
+        if self._varrido_em is not None and agora - self._varrido_em < self.limite.janela_segundos:
+            return
+        self._varrido_em = agora
+        for chave in list(self._marcas):
+            marcas = self._marcas[chave]
+            self._limpar(marcas, agora)
+            if not marcas:
+                del self._marcas[chave]
+
     def espera(self, chave: str, agora: float | None = None) -> int:
-        """Quantos segundos faltam até a chave poder tentar de novo. Zero se pode agora."""
+        """Quantos segundos faltam até a chave poder tentar de novo. Zero se pode agora.
+
+        Consulta com `get`: só perguntar não pode criar entrada, ou uma varredura de chaves
+        inexistentes encheria a memória sem nem tentar uma senha.
+        """
         agora = time.monotonic() if agora is None else agora
-        marcas = self._marcas[chave]
+        marcas = self._marcas.get(chave)
+        if marcas is None:
+            return 0
         self._limpar(marcas, agora)
         if len(marcas) < self.limite.tentativas:
             return 0
@@ -46,6 +74,7 @@ class Limitador:
     def registrar(self, chave: str, agora: float | None = None) -> None:
         """Contabiliza uma tentativa."""
         agora = time.monotonic() if agora is None else agora
+        self._talvez_varrer(agora)
         marcas = self._marcas[chave]
         self._limpar(marcas, agora)
         marcas.append(agora)

@@ -380,6 +380,34 @@ would otherwise record as an agreement that never happened.
 the log. A stack trace in a response hands over file paths, library versions and sometimes a
 fragment of the query.
 
+## Adversarial sweep (post-L13)
+
+The L13 audit confirmed what the design intended. This pass looked for the opposite: what the
+code does that the design did **not** intend. Eight defects, none of which the 232-test suite
+caught, each now with a regression test that fails if the fix is removed.
+
+| Severity | Defect | Why the suite missed it |
+|---|---|---|
+| **High** | The shared data cache is not scoped to a user. On a shared deck tablet, whoever logs in next could read the previous user's permits offline — the service worker keys by URL, and a URL has no owner | No test exercises two identities on one device |
+| **High** | A queued offline edit was sent with whatever token was active at flush time. User A's correction could be **recorded in the trail as authored by user B** | Same |
+| **High** | A condition that reappears after being resolved hit the `UNIQUE` on alert identity and crashed the sync with a `500`. Reachable path: an expired permit in execution is suspended (alert resolved) and then resumed | The tests only ever moved a condition in one direction |
+| **High** | A genuine `500` lost **every** security header. Unhandled exceptions are served by `ServerErrorMiddleware`, which sits above all application middleware | The L13 test used a `401` — an `HTTPException`, which travels through the stack |
+| **Medium** | The rate limiter grew without bound: 50,000 login attempts with distinct matrículas retained 50,000 keys forever, and merely *checking* a key allocated one. Unauthenticated memory exhaustion | Nothing measured memory |
+| **Medium** | `AEGIS_UPLOAD_DIR=static/uploads` would have published every attachment. The rule existed only as a comment | Configuration was never tested as an input |
+| **Medium** | Cache-first on the shell froze the installed app at its first version: a fix to `app.js` would never reach a tablet that had installed it, silently | No test of the update path |
+| **Low** | `visto_em` without a timezone compared naive against aware and never matched, so such a client got `409` on every edit — failing closed, but for a reason its message did not state | Every test sent an offset |
+
+**One fix was worse than the defect, and the sweep caught that too.** The first attempt at the
+rate limiter swept expired keys whenever the dictionary exceeded a size threshold. With many
+keys still inside the window, that meant a full pass on every attempt, freeing nothing —
+trading memory exhaustion for CPU exhaustion, which arrives sooner. It hung a verification run
+at 50,000 keys. The sweep is now time-based: at most one pass per window, which bounds both.
+
+The pattern behind most of these is the same, and worth naming: **each defect sat exactly where
+two mechanisms meet** — the service worker and the session, the exception handler and the
+middleware stack, configuration and the static mount, the queue and identity. Tests written per
+mechanism pass individually while the seam between them leaks.
+
 ## Findings
 
 Every pendency declared in L0–L12, and what became of it. "Accepted" means the risk is real,

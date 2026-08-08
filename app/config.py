@@ -4,8 +4,12 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# `static/` é servido como está, sem autorização nenhuma. Anexo gravado ali vira documento
+# público — inclusive a APR e o relatório de incidente.
+PASTA_PUBLICA = (Path(__file__).resolve().parent.parent / "static").resolve()
 
 
 class Settings(BaseSettings):
@@ -47,6 +51,23 @@ class Settings(BaseSettings):
 
     # Origens do PWA. Em produção, listar explicitamente; nunca "*".
     cors_origins: list[str] = ["http://localhost:8000", "http://127.0.0.1:8000"]
+
+    @field_validator("upload_dir")
+    @classmethod
+    def _fora_da_pasta_publica(cls, valor: Path) -> Path:
+        """Recusa subir se os anexos forem gravados dentro de `static/`.
+
+        Era só um comentário até aqui, e comentário não impede nada: bastava
+        `AEGIS_UPLOAD_DIR=static/uploads` no ambiente para todo anexo virar público, sem erro
+        nenhum aparecendo. Falhar na partida é o único momento em que isso ainda é barato.
+        """
+        resolvido = valor.expanduser().resolve()
+        if resolvido == PASTA_PUBLICA or PASTA_PUBLICA in resolvido.parents:
+            raise ValueError(
+                f"AEGIS_UPLOAD_DIR ({resolvido}) está dentro de {PASTA_PUBLICA}, que é "
+                "servida publicamente. Aponte para um diretório fora dela."
+            )
+        return valor
 
 
 @lru_cache

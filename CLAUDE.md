@@ -254,6 +254,29 @@ Deviations: `SUSPENSA` (only from `EM_EXECUCAO`) and `REJEITADA` (returns to `RA
   prevents an overwrite; on transition it prevents a signature standing for a document that
   changed after it was read. Making it required on transitions would break every existing
   client for a guarantee that is a genuine improvement rather than a correctness fix.
+- **`sincronizar` must load *all* alerts, resolved ones included.** Alert identity has a
+  `UNIQUE`, so filtering resolved rows out sends a returning condition into `db.add` and
+  crashes on the constraint. It happens for real: an expired permit in execution is suspended
+  (alert resolved) and then resumed. Reopen the existing row — a new one would present a
+  recurrence as a first occurrence.
+- **A genuine `500` never passes through application middleware.** `ServerErrorMiddleware` sits
+  above it, so `falha_inesperada` sets the security headers itself. Testing this with a `401`
+  proves nothing — an `HTTPException` travels through the stack; an unhandled exception does
+  not.
+- **The client caches and the queue are per-identity.** A deck tablet is shared. The service
+  worker keys by URL, which has no owner, so the data cache is cleared on every identity
+  change; and each queued edit carries the matrícula that made it, or a flush would attribute
+  it to whoever is logged in at the time — a forged author in the trail.
+- **Sweep the rate limiter by time, never by dictionary size.** Size-based sweeping with many
+  live keys runs a full pass per attempt and frees nothing: it trades memory exhaustion for
+  CPU exhaustion, which arrives first. One pass per window bounds both.
+- **The shell is cache-first *with* background revalidation.** Pure cache-first freezes the
+  installed app at its first version — a fix to `app.js` never reaches a tablet that already
+  installed it, and nothing errors. Bumping `VERSAO` by hand is not a substitute; it makes a
+  silent failure depend on memory.
+- **`AEGIS_UPLOAD_DIR` inside `static/` now refuses to start.** It had been a comment, and a
+  comment prevents nothing: that one environment variable turns every attachment into a public
+  document.
 
 ## Conventions
 

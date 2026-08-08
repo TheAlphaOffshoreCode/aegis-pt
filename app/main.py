@@ -12,7 +12,7 @@ import logging
 from app.config import get_settings
 from app.routers import ai, auth, health, indicadores, pts
 from app.rules.pendencias import ConflitoDeNegocio
-from app.security.cabecalhos import CabecalhosDeSeguranca
+from app.security.cabecalhos import CABECALHOS, CabecalhosDeSeguranca
 
 registro = logging.getLogger("aegis")
 
@@ -45,11 +45,17 @@ def falha_inesperada(request: Request, exc: Exception) -> JSONResponse:
 
     Uma stack trace na resposta entrega caminho de arquivo, versão de biblioteca e, às vezes,
     trecho de consulta. Quem precisa dela é quem opera o serviço, não quem chamou.
+
+    Os cabeçalhos de segurança são repetidos aqui de propósito. Este handler é executado pelo
+    `ServerErrorMiddleware`, que fica **acima** de todo middleware da aplicação — o
+    `CabecalhosDeSeguranca` nunca chega a ver esta resposta. Sem esta linha, a única resposta
+    sem proteção do serviço inteiro seria justamente a que sai quando algo deu errado.
     """
     registro.exception("Falha não tratada em %s %s", request.method, request.url.path)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"detail": "Erro interno. A ocorrência foi registrada."},
+        headers=dict(CABECALHOS),
     )
 
 

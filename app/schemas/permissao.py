@@ -5,9 +5,9 @@ produzidos pelo servidor, e aceitar qualquer um deles do cliente seria deixar o 
 escolher em que estado a permissão está.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.enums import EstadoPT, PapelAssinatura, TipoAnexo, TipoTrabalho
 from app.schemas.auditoria import AuditEventRead
@@ -84,6 +84,17 @@ class PermissaoTrabalhoUpdate(_PermissaoTrabalhoEntrada):
     """
 
     visto_em: datetime
+
+    @field_validator("visto_em")
+    @classmethod
+    def _em_utc(cls, valor: datetime) -> datetime:
+        """Sem fuso significa UTC, igual ao que a borda do banco faz com toda data.
+
+        Sem isto, um cliente que serialize sem offset compara ingênuo com aware, nunca
+        coincide e leva `409` em toda edição — falha fechada, mas por um motivo que não é o
+        que a mensagem diz.
+        """
+        return valor if valor.tzinfo else valor.replace(tzinfo=timezone.utc)
 
 
 class PermissaoTrabalhoRead(ORMDatado):
@@ -213,6 +224,14 @@ class TransicaoRequest(BaseModel):
     motivo: str | None = Field(default=None, max_length=2000)
     # O navegador informa; o servidor registra como veio, sem inventar quando falta.
     geolocalizacao: str | None = Field(default=None, max_length=80)
+
+    @field_validator("visto_em")
+    @classmethod
+    def _em_utc(cls, valor: datetime | None) -> datetime | None:
+        """Mesma normalização da edição: sem fuso significa UTC."""
+        if valor is None or valor.tzinfo:
+            return valor
+        return valor.replace(tzinfo=timezone.utc)
 
 
 class TransicaoDisponivel(BaseModel):
