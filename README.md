@@ -12,8 +12,8 @@ audit trail that survives an incident investigation.
 
 [![CI](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml/badge.svg)](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Status: L10 of L13](https://img.shields.io/badge/status-L10_of_L13-f59e0b.svg)](#roadmap)
-[![Tests: 169](https://img.shields.io/badge/tests-169_passing-22c55e.svg)](#tests)
+[![Status: L11 of L13](https://img.shields.io/badge/status-L11_of_L13-f59e0b.svg)](#roadmap)
+[![Tests: 195](https://img.shields.io/badge/tests-195_passing-22c55e.svg)](#tests)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Offline capable](https://img.shields.io/badge/PWA-offline_planned-0ea5e9.svg)](#offshore-constraints)
 
@@ -23,7 +23,7 @@ audit trail that survives an incident investigation.
 
 ## Current state — read this before cloning
 
-**L0 through L10 are done, and the permit cycle actually closes.** A permit is opened from a
+**L0 through L11 are done, and the permit cycle actually closes.** A permit is opened from a
 form defined per work type, collects its documents, walks the approval chain gathering a
 signature at each step, gets checked by a deterministic rule engine before release, leaves a
 hash-chained trail that detects tampering, and can be pulled back out as a single dossier —
@@ -78,10 +78,17 @@ numbering, same trail, same signature chain ahead of it. Proposing is not approv
 trail records it as `pt.criada_por_ia`, so an AI-drafted permit stays identifiable years
 later, in the investigation where it matters.
 
+L11 added the board: `GET /indicadores` counts the operation and `GET /alertas` lists what is
+going wrong, escalating from requisitante to coordenador to OIM as deadlines pass. An alert is
+**resolved, never deleted** — a problem that disappears without trace is exactly what an
+investigation later needs to find. And escalation is a function of the clock rather than a
+counter, so running the sync more often cannot inflate the urgency of anything.
+
 **What is still missing:** ingestion of the paper archive with OCR (proposed as its own loop —
-what it actually needs is a bulk import flow, not an OCR call), indicators and alerts (L11),
-the offline PWA (L12) and the closing security audit (L13). The interface is still a
-diagnostic shell — this is a working API, not a finished product.
+what it actually needs is a bulk import flow, not an OCR call), the offline PWA (L12) and the
+closing security audit (L13). The interface is still a diagnostic shell — this is a working
+API, not a finished product. Alerts also need something to call
+`POST /alertas/sincronizar` on a schedule: there is no daemon inside the process, on purpose.
 
 ## The problem
 
@@ -199,7 +206,7 @@ way to create accounts with a known password.
 python -m pytest -q
 ```
 
-A hundred and sixty-nine tests, none of which reach the network — the AI loop is exercised
+A hundred and ninety-five tests, none of which reach the network — the AI loop is exercised
 with an injected client, and the suite forces the API key empty so a key sitting in a
 developer's `.env` cannot make the tests call out and bill. The ones worth naming are those
 that fail loudly the day a guarantee quietly stops holding:
@@ -227,6 +234,8 @@ that fail loudly the day a guarantee quietly stops holding:
 - an AI-drafted permit stores the gas reading exactly as the caller sent it, and that value
   appears nowhere in the request sent to the model — the proposal schema has no field it
   could come back in;
+- running the alert sync twice in the same minute opens nothing and escalates nothing, and an
+  alert whose condition disappears is marked resolved rather than deleted;
 - SQLite foreign keys are actually enforced, and the migration is compared against the models
   and then rolled all the way back.
 
@@ -259,13 +268,15 @@ also how CI runs them, on 3.11 and 3.14.
 | `GET` | `/pts/{id}/anexos/{id}/conteudo` | Download, always `attachment` + `nosniff` |
 | `POST` | `/ai/consulta` | Natural-language question, answered with the permits it read |
 | `POST` | `/ai/rascunho` | Drafts a permit from a description; measurements come from you |
+| `GET` | `/indicadores` | The operation in counts — every value a `COUNT`, never an estimate |
+| `GET` · `POST` | `/alertas` · `/alertas/sincronizar` | What is going wrong, and who it has escalated to |
 | `GET` | `/` · `/static/{path}` | PWA shell and vendored assets |
 
 A blocking pendency returns `409` with a structured list — `codigo`, `severidade`, `mensagem`,
 `campo`, `responsavel` — never a bare sentence, because the screen needs to know which field to
 mark and who is expected to resolve it. `422` still means the payload did not parse at all.
 
-Still scheduled: indicators and alerts at L11, offline sync at L12.
+Still scheduled: the offline PWA and its sync at L12.
 
 The `/ai/*` routes answer `503` when no API key is configured. The AI degrades on its own; the
 rest of the application starts and works without it.
@@ -327,9 +338,17 @@ convenience — when the first design collided with the rule that a permit canno
 incomplete, the fix was to make the division of labour explicit in the contract, not to give
 the AI a way around validation that a person doesn't have.
 
-**L11–L13 — operation.** Indicators and escalating alerts, the offline PWA with conflict
-resolution, and a closing security audit — which includes prompt-injection review of every
-template and a rate limit on the AI endpoint, both declared open rather than assumed solved.
+**L11 — done.** Indicators and escalating alerts. Every indicator is a `COUNT` scoped to the
+caller — a dashboard looks harmless until someone plans a shift from it. Alerts are derived
+from conditions and materialised by an explicit, idempotent sync call rather than a hidden
+daemon: nothing fires on its own, so a deployment that forgets the cron gets a stale board
+instead of a wrong one. They escalate by the clock, from requisitante to coordenador to OIM,
+and are resolved rather than deleted. The suite passed on the first run; the development
+database still found a defect, announcing an already-expired certificate as "about to expire".
+
+**L12–L13 — operation.** The offline PWA with conflict resolution, and a closing security
+audit — which includes prompt-injection review of every template and a rate limit on the AI
+endpoints, both declared open rather than assumed solved.
 
 ## Disclaimer
 

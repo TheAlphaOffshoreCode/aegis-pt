@@ -16,7 +16,7 @@ Fonte de verdade para retomar o trabalho. Atualizado ao fim de cada loop.
 | L8.5 | Acervo legado e OCR | ⏳ proposto, adiado — o L9 veio antes | — |
 | L9 | IA: busca em linguagem natural | ✅ concluído | 2026-08-07 |
 | L10 | IA: geração de rascunho | ✅ concluído | 2026-08-08 |
-| L11 | Indicadores e alertas | — | — |
+| L11 | Indicadores e alertas | ✅ concluído | 2026-08-08 |
 | L12 | PWA e operação offline | — | — |
 | L13 | Auditoria de segurança e fechamento | — | — |
 
@@ -545,6 +545,74 @@ pedido, texto vem do modelo. Como o tipo é escolhido pela IA, as respostas envi
 servir para ele — e aí volta o mesmo `409` com a lista de campos que faltam que qualquer PT
 receberia, sem criar nada. Tem teste.
 
+---
+
+## L11 — Indicadores e alertas (2026-08-08)
+
+**Entregue:** `GET /indicadores`, `GET /alertas` e `POST /alertas/sincronizar`, com cinco tipos
+de alerta e escalonamento por tempo vencido.
+**Aceite:** 195 testes passando (26 novos). Contra o banco de desenvolvimento, a sincronização
+abriu o alerta da NR-35 vencida do Rafael Souza, já no nível 2 (OIM), e rodá-la de novo não
+mudou nada.
+
+### Arquivos tocados
+
+| Arquivo | Papel |
+|---|---|
+| `app/rules/alertas.py` | condições e escada de escalonamento, funções puras sem banco |
+| `app/rules/exigencias.py` | prazos e a escada como dado: 2 h, 24 h, 8 h por nível |
+| `app/services/alertas.py` | `sincronizar()` idempotente, `listar()` com escopo |
+| `app/services/indicadores.py` | as contagens, todas no escopo |
+| `app/routers/indicadores.py`, `app/schemas/indicadores.py` | painel e sincronização |
+| `app/models/auditoria.py` + migration | `alerta` ganha `unidade_id`, `mensagem` e UNIQUE de identidade |
+| `tests/test_alertas.py` | 26 testes |
+
+### Decisões
+
+- **Condição calculada, alerta gravado.** A condição vem do estado atual e some sozinha quando
+  o problema é resolvido; o alerta guarda o que só o banco guarda — que já subiu de nível e
+  desde quando dói. Os dois passos existem porque as duas coisas são diferentes.
+- **Não há daemon.** `sincronizar()` é uma função que alguém chama — um cron, um botão, um
+  teste. Prometer disparo automático num sistema sem agendador seria mentira; assim o que
+  falta é uma linha de crontab, e está escrito.
+- **Idempotente por construção.** A identidade do alerta é `(tipo, entidade, entidade_id)` com
+  UNIQUE no banco, e o nível é função do relógio, não contador. Rodar mais vezes não inflaciona
+  a urgência de nada.
+- **Resolvido, nunca apagado.** Condição que some marca o alerta como resolvido. Apagar
+  esconderia que o problema existiu — que é exatamente o que uma investigação vai procurar.
+- **`unidade_id` no próprio alerta.** Deduzir da entidade obrigaria o filtro de escopo a saber
+  se está olhando uma PT ou uma certificação. Guardado, a regra 5 é um `WHERE` só.
+- **`responsavel` é derivado do nível, não gravado.** Gravar criaria uma segunda verdade: bastaria
+  a escada mudar em `exigencias.py` para linhas antigas apontarem para quem não responde mais.
+- **`sincronizar` ignora o escopo de quem chama** e é restrita a coordenação e OIM. Alerta que
+  só existe quando a pessoa certa clica não é alerta.
+- **P11 resolvida:** `AlertaRead` estava órfã desde o L1 e agora tem consumidor.
+
+### O defeito que só apareceu rodando de verdade
+
+A suíte passou 25/25 de primeira. Contra o banco de desenvolvimento, o primeiro alerta que saiu
+foi `certificacao_a_vencer: NR-35 de Rafael Souza vence em 23/06/2026` — data passada, verbo no
+futuro. A certificação não está *a vencer*, está *vencida* há mais de um mês.
+
+O motor do L4 já separa `certificacao_vencida` de `certificacao_a_vencer`; meu vocabulário de
+alertas tinha divergido do dele. Corrigido nos dois lugares (tipo e mensagem), com teste. Na
+ressincronização o alerta errado foi **resolvido** e o certo abriu — o comportamento que o
+desenho previa, confirmado no banco real.
+
+**Terceira vez que rodar a aplicação pega o que a suíte não pega**, e pelo mesmo motivo: o teste
+monta o cenário que eu imaginei; o banco de desenvolvimento carrega o que sobrou de sete loops.
+
+### A quarta ferramenta de IA que eu não adicionei
+
+Um `indicadores` como ferramenta do L9 fecharia uma brecha real da regra 2: hoje, perguntado
+"quantas PTs a quente venceram este mês?", o modelo tenderia a somar resultados de busca.
+
+Não entrou, e o teste que fixa o conjunto de três ferramentas fez o trabalho dele — me obrigou a
+pensar antes. O motivo de não entrar é um conflito de verdade: uma resposta baseada só em
+contagem não recupera PT nenhuma, e a regra 3 **como está implementada** descartaria o texto e
+responderia "não encontrei". Resolver isso é decidir o que conta como fonte, e essa decisão é
+do William. Fica como P40.
+
 ### Pendências abertas
 
 | # | Pendência | Loop de destino |
@@ -559,7 +627,7 @@ receberia, sem criar nada. Tem teste.
 | ~~P8~~ | ~~`security-review` sem linha de base~~ — destravada pelo commit inicial | resolvido em 05/08/2026 |
 | P9 | Skill `impeccable` aplicada às telas reais; o shell atual é diagnóstico | L11/L12 |
 | ~~P10~~ | ~~Coluna `respostas` especulativa~~ — virou o campo onde o formulário dinâmico grava | resolvido no L3 |
-| P11 | `AlertaRead` ainda sem consumidor. `AuditEventRead` passou a ser usado no L6; `AnexoCreate` foi apagado no L7 | L11 |
+| ~~P11~~ | ~~`AlertaRead` sem consumidor~~ — `/alertas` entregue, com `mensagem`, `unidade_id` e `responsavel` derivado | resolvido no L11 |
 | ~~P12~~ | ~~`usuario` sem credencial~~ — `senha_hash`, `ultimo_acesso` e `unidade_id` criados | resolvido no L2 |
 | P13 | Compatibilidade com Python 3.11 só é provada no CI — esta máquina tem apenas 3.14 | contínuo |
 | P14 | Login sem limite de tentativas e sem bloqueio de conta; sem lista de revogação de token — token vazado vale até vencer | L13 |
@@ -588,6 +656,10 @@ receberia, sem criar nada. Tem teste.
 | P37 | **Rascunho não pode nascer incompleto.** `validar_respostas` vive na escrita (`criar_pt`/`atualizar_pt`), não em `avaliar_pt` — por isso a medição entra junto com o pedido. Se a operação quiser abrir a PT *antes* de medir, a completude precisa migrar para o motor de regras e passar a barrar a transição, não a criação | decisão de produto |
 | P38 | Perigo e controle são duas listas de frases (`[{"descricao": ...}]`), sem vínculo entre si. Amarrar cada controle ao perigo que ele mitiga é o que uma tela de análise vai querer | L11/L12 |
 | P39 | `/ai/rascunho` custa tokens e cria PT a cada chamada: sem limite de uso, um laço enche o acervo de rascunhos. Vale junto com o rate limit da P34 | L13 |
+| P40 | **Ferramenta `indicadores` para a IA**, que fecharia a brecha de o modelo somar resultados de busca. Esbarra na regra 3 como implementada: resposta sem PT recuperada é descartada. Exige decidir o que conta como fonte | decisão do William |
+| P41 | **Nada agenda a sincronização de alertas.** `/alertas/sincronizar` é uma rota; sem um cron chamando, o painel envelhece em silêncio. Um deploy que esquecer a linha do crontab tem quadro parado, não errado | L12/L13 (operação) |
+| P42 | `sincronizar()` varre todas as PTs não encerradas e todas as certificações a cada chamada. Com acervo grande vira leitura completa por passagem — mesma família da P27 | quando o acervo crescer |
+| P43 | Alerta não tem reconhecimento humano: só `resolvido` automático pela condição sumir. Não dá para dizer "vi, estou tratando", e o `CANCELADO` do enum não tem caminho de código | quando a operação pedir |
 
 ### Ponto exato de retomada
 
@@ -614,12 +686,19 @@ L10 fechado e verificado: 169 testes passando, nenhum saindo para a rede. Com a 
 ar e sem chave, `/ai/rascunho` responde 503 e `/pts` segue devolvendo as 2 PTs do banco de
 desenvolvimento.
 
+L11 fechado e verificado: 195 testes passando. No banco de desenvolvimento, `sincronizar`
+abriu o alerta da NR-35 vencida no nível 2 (OIM) e a segunda chamada não mudou nada; o painel
+responde 2 PTs no escopo, uma em `LIBERACAO` e uma em `RASCUNHO`.
+
+**Para manter os alertas vivos:** algo precisa chamar `POST /alertas/sincronizar`
+periodicamente (P41). Não há agendador no processo, de propósito.
+
 Próximo passo: **decisão do William entre dois caminhos.**
 
-**L11 — Indicadores e alertas.** A sequência natural do roadmap: painel de indicadores e
-alertas com escalonamento (certificação a vencer, PT parada, janela estourando). É onde a
-`AlertaRead` da P11 finalmente ganha consumidor, e onde a P27 (verificador percorrendo a
-cadeia inteira a cada consulta) começa a doer de verdade.
+**L12 — PWA e operação offline.** O que falta para virar produto de verdade: as telas (hoje só
+o shell diagnóstico), `manifest.json`, service worker e sincronização offline sem sobrescrever
+mudança remota em silêncio — que é um dos testes obrigatórios do contrato e ainda não existe.
+É onde a P1 (fontes), a P2 (PWA) e a P9 (`impeccable` nas telas reais) se resolvem juntas.
 
 **L8.5 — Acervo legado e OCR** (ainda proposto). Escopo próprio: modelo `documento_legado`,
 upload em lote, OCR com Tesseract, indexação do texto extraído e vínculo opcional com PT. Traz

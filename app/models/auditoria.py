@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, Text, event
+from sqlalchemy import ForeignKey, String, Text, UniqueConstraint, event
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.audit.formato import VERSAO_PAYLOAD
@@ -76,15 +76,29 @@ def _trilha_e_append_only(session, contexto_do_flush, instancias) -> None:  # no
 
 
 class Alerta(TimestampMixin, Base):
-    """Pendência com prazo e escalonamento. Os disparos e regras de escalada são do L11."""
+    """Pendência com prazo e escalonamento, materializada a partir das condições do L11.
+
+    `(tipo, entidade, entidade_id)` é a identidade do alerta: a mesma condição detectada de
+    novo reencontra a linha existente em vez de criar outra. É o que faz a sincronização ser
+    idempotente.
+    """
 
     __tablename__ = "alerta"
+    __table_args__ = (
+        UniqueConstraint("tipo", "entidade", "entidade_id", name="uq_alerta_identidade"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     # Mesma razão do `tipo_evento`: catálogo aberto, definido pelas regras do L11.
     tipo: Mapped[str] = mapped_column(String(60), index=True, nullable=False)
     entidade: Mapped[str] = mapped_column(String(40), nullable=False)
     entidade_id: Mapped[int] = mapped_column(nullable=False)
+    # Escopo do alerta. Guardado aqui, e não deduzido da entidade, porque a consulta precisa
+    # filtrar por unidade sem saber se está olhando uma PT ou uma certificação (regra 5).
+    unidade_id: Mapped[int] = mapped_column(
+        ForeignKey("unidade.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    mensagem: Mapped[str] = mapped_column(String(400), nullable=False)
     prazo: Mapped[datetime | None] = mapped_column(UTCDateTime, index=True)
     nivel_escalonamento: Mapped[int] = mapped_column(default=0, nullable=False)
     status: Mapped[StatusAlerta] = mapped_column(

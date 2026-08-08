@@ -7,7 +7,13 @@ Nenhum destes valores pode vir de modelo de linguagem (regra 2). São tabelas fi
 e cobertas por teste.
 """
 
-from app.models.enums import EstadoPT, TipoAnexo, TipoCertificacao, TipoTrabalho
+from app.models.enums import (
+    EstadoPT,
+    PerfilUsuario,
+    TipoAnexo,
+    TipoCertificacao,
+    TipoTrabalho,
+)
 
 # Habilitação normativa exigida de cada executante, por tipo de trabalho.
 CERTIFICACAO_EXIGIDA: dict[TipoTrabalho, TipoCertificacao] = {
@@ -59,3 +65,29 @@ ESTADOS_QUE_OCUPAM_A_AREA: frozenset[EstadoPT] = frozenset(
 
 # Janela em que uma certificação prestes a vencer já merece aviso, sem bloquear.
 DIAS_DE_AVISO_DE_VENCIMENTO = 30
+
+# --- Alertas (L11) -----------------------------------------------------------------------
+
+# Estados em que a PT está andando pela cadeia de aprovação e depende de alguém agir.
+ESTADOS_EM_APROVACAO: frozenset[EstadoPT] = frozenset(
+    {EstadoPT.VALIDACAO, EstadoPT.ANALISE_SMS, EstadoPT.APROVACAO, EstadoPT.LIBERACAO}
+)
+
+# Antecedência com que uma PT em execução começa a avisar que a janela vai fechar. Duas horas
+# é o que dá para desmobilizar uma frente de serviço sem correria.
+HORAS_DE_AVISO_DE_FIM_DE_JANELA = 2
+
+# Tempo parado na mesma etapa de aprovação antes de virar alerta. Uma PT emitida no fim de um
+# turno espera o turno seguinte; mais que isso é alguém esquecendo dela.
+HORAS_ATE_PT_PARADA = 24
+
+# A cada intervalo vencido, o alerta sobe um nível na escada de responsáveis.
+HORAS_POR_NIVEL_DE_ESCALONAMENTO = 8
+
+# Para quem o alerta sobe, em ordem. O índice é o `nivel_escalonamento` do alerta, e o último
+# nível é o teto: acima do OIM não há para quem escalar a bordo.
+ESCADA_DE_ESCALONAMENTO: tuple[PerfilUsuario, ...] = (
+    PerfilUsuario.REQUISITANTE,
+    PerfilUsuario.COORDENADOR,
+    PerfilUsuario.OIM,
+)

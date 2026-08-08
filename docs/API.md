@@ -290,6 +290,51 @@ type it picked. That returns the ordinary `409` with the exact missing fields �
 created — and `GET /pts/modelos/{tipo}` gives the form. `502` means the model itself failed
 (refused, ran out of steps, or returned something outside the schema); `503` means no API key.
 
+### `GET /indicadores`
+
+A snapshot of the operation, scoped to the caller.
+
+```json
+{ "total_de_pts": 2, "pts_por_estado": { "LIBERACAO": 1, "RASCUNHO": 1 },
+  "pts_por_tipo": { "trabalho_a_quente": 1, "trabalho_em_altura": 1 },
+  "em_execucao": 0, "janelas_fechando": 0, "vencidas_em_execucao": 0,
+  "alertas_abertos": 1, "alertas_por_nivel": { "2": 1 } }
+```
+
+Every value is a `COUNT` — nothing here is estimated, and the scope enters the query rather
+than filtering the result. `janelas_fechando` and `vencidas_em_execucao` are deliberately
+separate counts: a window that has already closed with people working under it is not "nearly
+expiring", and it disappears inside a single number.
+
+### `GET /alertas` · `POST /alertas/sincronizar`
+
+An alert exists while its condition holds. The condition is derived from current state; the
+alert row is what only a database can keep — that it has been seen, that it has escalated,
+and since when it has been hurting.
+
+```json
+[ { "tipo": "certificacao_vencida", "entidade": "certificacao", "entidade_id": 4,
+    "mensagem": "NR-35 de Rafael Souza venceu em 23/06/2026",
+    "nivel_escalonamento": 2, "responsavel": "oim", "status": "escalonado",
+    "prazo": "2026-06-23T23:59:59Z" } ]
+```
+
+Types so far: `pt_vencida_em_execucao`, `pt_vencendo`, `pt_parada`, `certificacao_vencida`,
+`certificacao_a_vencer`. Filters: `tipo`, `status`, `nivel_minimo`. Ordered by escalation
+level, highest first — the order someone on board should read them in.
+
+`responsavel` is derived from the level, never stored: storing it would create a second
+truth, and a change to the escalation ladder would leave old rows pointing at people who no
+longer answer for them.
+
+**`POST /alertas/sincronizar`** recomputes the conditions and materialises them: opens what is
+new, escalates what is overdue, and resolves what no longer holds — resolved, not deleted,
+because an alert that vanishes without trace hides that the problem existed. It is
+**idempotent**: the escalation level is a function of the clock, not of how many times the
+sync ran, so calling it twice in the same minute changes nothing. There is no hidden daemon —
+it is a plain endpoint for a cron to call, restricted to `coordenador` and `oim`, because an
+alert that only exists when the right person clicks is not an alert.
+
 ## Business conflicts
 
 Every blocking pendency returns `409` with the structured list, produced by a single handler
@@ -338,5 +383,4 @@ removes the need it was solving. Revisit if shifts stop fitting in one token.
 
 | Loop | Endpoints |
 |---|---|
-| L11 | `/indicadores/*`, `/alertas` |
 | L12 | offline sync |

@@ -203,6 +203,23 @@ Deviations: `SUSPENSA` (only from `EM_EXECUCAO`) and `REJEITADA` (returns to `RA
 - **Validate the model's structured output again on arrival.** The schema constrains shape,
   not meaning — a `tipo_trabalho` outside `TipoTrabalho` still comes back as a valid string.
   Pydantic re-validation is what turns that into a refusal instead of a broken permit.
+- **An alert stores its own `unidade_id`.** Deriving it from the entity would mean the scope
+  filter has to know whether it is looking at a permit or a certification. Storing it keeps
+  rule 5 as one `WHERE` regardless of what the alert is about.
+- **Alert identity is `(tipo, entidade, entidade_id)`, enforced by a UNIQUE.** That is what
+  makes `sincronizar` idempotent: the same condition detected again finds the existing row.
+  Escalation is a function of the clock, never a counter — otherwise running the sync more
+  often would inflate the urgency of everything.
+- **`sincronizar` deliberately ignores the caller's scope.** It runs over the whole operation
+  and is gated by profile instead. An alert that only exists when the right person clicks is
+  not an alert.
+- **Alert vocabulary must match the rule engine's.** L11 first shipped `certificacao_a_vencer`
+  for a certificate that had *already expired*, printing "vence em" over a past date — caught
+  by running against the development database, not by the suite. The engine already
+  distinguished `certificacao_vencida`; the alerts had drifted from it.
+- **Derived fields stay derived.** `responsavel` comes from the escalation level at read time.
+  Storing it would leave old rows pointing at whoever used to be responsible the day the
+  ladder in `exigencias.py` changed.
 
 ## Conventions
 

@@ -184,6 +184,34 @@ parameters like every other query.
 The dossier exposes nothing new — it composes what the caller could already read one endpoint
 at a time, and answers `404` outside scope like the permit itself.
 
+## Indicators and alerts (L11)
+
+**Every number is a `COUNT`.** A dashboard looks harmless until someone plans a shift from it.
+Nothing in `/indicadores` is estimated, sampled or inferred, and none of it passes through a
+language model — the same rule 2 that governs the engine, applied where it is easiest to
+forget.
+
+**Scope enters the query, for alerts too.** That is why an alert stores its own `unidade_id`
+instead of deriving it from the entity: the filter has to work without knowing whether it is
+looking at a permit or a certification. A user posted to one unit does not see the other
+unit's alerts, and `sincronizar` — which runs over the whole operation — is restricted to
+`coordenador` and `oim`. Whoever triggers it is deliberately not whoever reads it: an alert
+that only exists when the right person clicks is not an alert.
+
+**Alerts are resolved, never deleted.** When a condition disappears the row stays, marked
+`resolvido`. Deleting it would erase the fact that the problem existed, which is precisely
+what an investigation later needs. Escalation is a function of the clock, not of how often
+the sync ran, so the process cannot inflate its own urgency by running more often.
+
+**`responsavel` is derived, not stored.** Storing it would create a second truth; a change to
+the escalation ladder would leave old rows pointing at people who no longer answer for them.
+
+Two limits worth stating plainly: there is **no scheduler** in this application, so alerts are
+only as fresh as the last call to `/alertas/sincronizar` — nothing fires on its own, and a
+deployment that forgets the cron gets a silent board rather than a wrong one. And an alert
+that reaches the top of the ladder stays there: above the OIM there is nobody on board to
+escalate to, which is a fact about the vessel, not a gap in the code.
+
 ## Data integrity
 
 - Foreign keys are enforced on SQLite (`PRAGMA foreign_keys=ON` on every connection).

@@ -6,9 +6,10 @@ partir do que aconteceu. Aceitar um evento vindo do cliente seria aceitar trilha
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from app.models.enums import EstadoPT, PerfilUsuario, StatusAlerta
+from app.rules.exigencias import ESCADA_DE_ESCALONAMENTO
 from app.schemas.base import ORMDatado, ORMSchema
 
 
@@ -57,10 +58,26 @@ class CompensacaoRequest(BaseModel):
 
 
 class AlertaRead(ORMDatado):
+    """Um alerta aberto."""
+
     id: int
     tipo: str
     entidade: str
     entidade_id: int
+    unidade_id: int
+    mensagem: str
     prazo: datetime | None
     nivel_escalonamento: int
     status: StatusAlerta
+
+    @computed_field
+    @property
+    def responsavel(self) -> PerfilUsuario:
+        """Quem responde pelo alerta agora — derivado do nível, nunca gravado.
+
+        Guardar seria criar uma segunda verdade: bastaria a escada mudar em `exigencias.py`
+        para as linhas antigas apontarem para quem não responde mais por elas.
+        """
+        return ESCADA_DE_ESCALONAMENTO[
+            min(self.nivel_escalonamento, len(ESCADA_DE_ESCALONAMENTO) - 1)
+        ]
