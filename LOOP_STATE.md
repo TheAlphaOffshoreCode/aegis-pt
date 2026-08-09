@@ -19,6 +19,7 @@ Fonte de verdade para retomar o trabalho. Atualizado ao fim de cada loop.
 | L11 | Indicadores e alertas | ✅ concluído | 2026-08-08 |
 | L12 | PWA e operação offline | ✅ concluído | 2026-08-08 |
 | L13 | Auditoria de segurança e fechamento | ✅ concluído | 2026-08-08 |
+| — | Verificação independente (P49, P50) | ✅ concluído | 2026-08-09 |
 
 ---
 
@@ -863,3 +864,37 @@ na migration quando a tabela já tem linhas.
 
 Credenciais de desenvolvimento: matrículas `10001` a `10005`, senha `aegis-dev-2026`
 (`python -m app.seed`, que recusa rodar fora de `environment=development`).
+
+---
+
+## Fora de loop — verificação independente (09/08/2026)
+
+Repositório clonado noutro PC, dependências reinstaladas e a aplicação **rodada de verdade**:
+migrations, seed, `uvicorn`, uma PT criada e levada até `VALIDACAO`, e o PWA dirigido num Chrome
+por CDP. Dois defeitos, um em cada ponta do que a suíte não alcança.
+
+**P49 — a cadeia de auditoria bifurcava sob concorrência.** `registrar_evento` lê o último elo e
+depois insere, sem trava, restrição ou isolamento entre as duas coisas. Duas gravações
+simultâneas na mesma PT — anexo e assinatura no mesmo instante — leem o mesmo `hash_anterior` e
+nascem irmãs; a cadeia bifurca e o verificador passa a acusar adulteração para sempre numa trilha
+que ninguém tocou. O SQLite esconde pela trava global de escrita, então só apareceria no
+PostgreSQL de produção. Corrigido com `UNIQUE (pt_id, hash_anterior)` (migration
+`ccddf73c09f2`); o perdedor da corrida leva `IntegrityError` e a requisição falha, que é ruidoso
+mas honesto. Teste novo em `test_auditoria.py`, provado a desligar a restrição e ver o teste cair.
+
+**P50 — o veredito do motor de regras nunca chegou à tela.** `GET /pts/{id}/pendencias` devolve a
+avaliação inteira (`AvaliacaoRead`) e o detalhe iterava a resposta direto: `.length` saía
+`undefined`, o `for...of` estourava no objeto e o `catch` virava um aviso amarelo com cara de
+falha de rede. Em toda PT, desde o L4. Corrigido com uma desestruturação, e conferido na tela
+antes e depois.
+
+O P48 (nenhum teste roda o JavaScript) era risco aceito com uma mitigação declarada — "os
+contratos dos endpoints que as telas consomem" — que nunca tinha sido escrita. O P50 é exatamente
+ela cobrando. Agora existe: `test_pwa.py` casa cada `api()` do `app.js` contra o OpenAPI vivo da
+aplicação, e o teste afirma quantas chamadas conferiu, para não se desligar em silêncio se o
+regex quebrar. Comportamento de tela — renderização, roteamento, fila offline — segue sem
+cobertura.
+
+**247 testes passando** (2 novos). Auditoria completa, incluindo o que foi conferido e nada tinha:
+sem injeção de SQL, sem segredo no código, sem `eval`/`subprocess`; upload, download, JWT, Argon2,
+escopo e ferramentas da IA todos íntegros.

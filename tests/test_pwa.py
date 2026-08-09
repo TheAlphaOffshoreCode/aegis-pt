@@ -6,6 +6,7 @@ instalar e de abrir sem sinal, que é justamente o que este loop entregou.
 """
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -89,3 +90,51 @@ def test_nenhum_recurso_externo_no_shell() -> None:
 
     assert "http://" not in html
     assert "https://" not in html
+
+
+def _rota_generica(caminho: str) -> str:
+    """`/pts/${pt.id}/pendencias` e `/pts/{pt_id}/pendencias` viram a mesma coisa.
+
+    O `${...}` sai primeiro: invertido, o `{...}` come o miolo, sobra um `$` solto, e a
+    conferência passa a pular as rotas com parâmetro — que são quase todas.
+    """
+    generica = re.sub(r"\{[^}]*\}", "{}", re.sub(r"\$\{[^}]+\}", "{}", caminho)).split("?")[0]
+    # `/pts${busca}` interpola a query, não um segmento: o `{}` no fim não é parâmetro de rota.
+    return generica[:-2] if generica.endswith("{}") and not generica.endswith("/{}") else generica
+
+
+def test_o_frontend_nao_itera_resposta_que_nao_e_lista(client: TestClient) -> None:
+    """Cada `api()` do app.js tem de tratar a resposta com a forma que o endpoint devolve.
+
+    `/pts/{id}/pendencias` responde a avaliação inteira (`AvaliacaoRead`) e o detalhe iterava a
+    resposta direto: `.length` saía `undefined`, o `for...of` estourava no objeto e o `catch`
+    virava um aviso com cara de falha de rede. O veredito do motor nunca chegou à tela, em
+    nenhuma PT, e nada caiu — a suíte inteira é de backend.
+    """
+    listas: dict[str, bool] = {}
+    for rota, operacoes in client.get("/openapi.json").json()["paths"].items():
+        resposta = operacoes.get("get", {}).get("responses", {}).get("200", {})
+        # Nem toda resposta é JSON — um download declara o seu próprio tipo. Sem schema aqui
+        # não há forma a conferir, e a rota sai fora em vez de derrubar a conferência inteira.
+        schema = resposta.get("content", {}).get("application/json", {}).get("schema")
+        if schema is not None:
+            listas[_rota_generica(rota)] = schema.get("type") == "array"
+
+    js = (ESTATICO / "js" / "app.js").read_text(encoding="utf-8")
+    divergentes, conferidas = [], 0
+    for atribuicao in re.finditer(r"const\s+(\w+)\s*=\s*await api\([`\"]([^`\"]+)[`\"]\)", js):
+        nome, caminho = atribuicao.group(1), _rota_generica(atribuicao.group(2))
+        if caminho not in listas:
+            continue
+        conferidas += 1
+        # Só o trecho logo abaixo da chamada, que é onde a resposta é consumida — o nome pode
+        # se repetir mais adiante no arquivo com outro significado.
+        adiante = js[atribuicao.end() : atribuicao.end() + 400]
+        como_lista = f"{nome}.length" in adiante or f"of {nome})" in adiante
+        if como_lista and not listas[caminho]:
+            divergentes.append(f"{caminho} devolve objeto e o app.js trata `{nome}` como lista")
+
+    assert divergentes == []
+    # Sem isto a conferência se desliga em silêncio: basta o regex deixar de casar, ou uma
+    # rota mudar de forma, para o laço passar batido e o teste virar verde permanente.
+    assert conferidas >= 5, f"a conferência só alcançou {conferidas} chamadas — regex quebrado?"

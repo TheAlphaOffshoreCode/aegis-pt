@@ -396,7 +396,9 @@ async function telaDetalhe(id) {
 
   // --- pendências (o veredito do motor de regras) ---
   try {
-    const pendencias = await api(`/pts/${pt.id}/pendencias`);
+    // O endpoint devolve a avaliação inteira (`AvaliacaoRead`), não a lista solta: iterar a
+    // resposta direto estoura e o veredito do motor nunca chega à tela.
+    const { pendencias } = await api(`/pts/${pt.id}/pendencias`);
     const bloco = el("section", { class: "painel" }, [el("h2", { texto: "Pendências" })]);
     if (!pendencias.length) {
       bloco.append(el("p", { class: "vazio", texto: "Nada pendente." }));

@@ -6,6 +6,7 @@ from datetime import timedelta
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit.trilha import Contexto, calcular_hash, montar_payload
@@ -344,3 +345,40 @@ def test_editar_rascunho_deixa_rastro(
     assert "pt.editada" in [e.tipo_evento for e in eventos]
     assert verificar_cadeia(eventos, pt.uuid) == []
     assert db.get(PermissaoTrabalho, pt.id).estado == EstadoPT.RASCUNHO
+
+
+def test_banco_recusa_dois_eventos_encadeados_no_mesmo_elo(
+    pt_com_trilha: dict, db: Session
+) -> None:
+    """Um elo só pode ter um sucessor — a restrição, e não a boa vontade do chamador.
+
+    `registrar_evento` lê o último elo e depois insere. Duas requisições simultâneas na mesma PT
+    leem o mesmo `hash_anterior` e nascem irmãs; a cadeia bifurca e o verificador passa a acusar
+    adulteração para sempre numa trilha que ninguém tocou. Aqui as duas irmãs são inseridas de
+    uma vez, que é o estado exato que a corrida deixaria na tabela.
+
+    A corrida em si não dá para encenar no SQLite, que serializa escritores pela trava do
+    arquivo — é justamente por isso que o defeito só apareceria no PostgreSQL de produção. A
+    restrição vale nos dois.
+    """
+    pt = pt_com_trilha["pt"]
+    ultimo = _eventos(db, pt.id)[-1]
+
+    def irmao(tipo: str) -> AuditEvent:
+        return AuditEvent(
+            pt_id=pt.id,
+            tipo_evento=tipo,
+            ocorrido_em=agora_utc(),
+            hash_documento="h",
+            hash_anterior=ultimo.hash_evento,
+            # Hashes de evento diferentes de propósito: iguais, quem recusaria seria o `unique`
+            # de `hash_evento` e o teste passaria sem provar nada sobre o elo.
+            hash_evento=calcular_hash(ultimo.hash_evento, tipo),
+        )
+
+    db.add_all([irmao("pt.teste.a"), irmao("pt.teste.b")])
+    with pytest.raises(IntegrityError):
+        db.flush()
+    db.rollback()
+
+    assert verificar_cadeia(_eventos(db, pt.id), pt.uuid) == []

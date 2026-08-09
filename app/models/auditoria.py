@@ -19,6 +19,17 @@ class AuditEvent(Base):
     """
 
     __tablename__ = "audit_event"
+    __table_args__ = (
+        # Um elo só pode ter um sucessor. `registrar_evento` lê o último hash e depois insere;
+        # sem esta restrição, duas gravações simultâneas na mesma PT leem o mesmo
+        # `hash_anterior`, a cadeia bifurca, e o verificador acusa adulteração para sempre numa
+        # trilha que ninguém tocou. O SQLite esconde pela trava global de escrita; o PostgreSQL
+        # de produção não. O perdedor da corrida leva `IntegrityError` — repetir é trabalho da
+        # requisição, não daqui, porque a transação já está perdida quando isso estoura.
+        # O primeiro evento escapa (`hash_anterior` nulo não colide com nulo em SQL) e nasce na
+        # mesma transação que cria a PT, onde não há segunda gravação para disputar.
+        UniqueConstraint("pt_id", "hash_anterior", name="uq_audit_event_elo"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     pt_id: Mapped[int | None] = mapped_column(
