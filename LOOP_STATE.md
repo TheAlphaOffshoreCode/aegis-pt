@@ -23,6 +23,7 @@ Fonte de verdade para retomar o trabalho. Atualizado ao fim de cada loop.
 | — | Tela de emissão e anexos | ✅ concluído | 2026-08-09 |
 | — | Trilha na tela e agendador de alertas (P41) | ✅ concluído | 2026-08-10 |
 | — | Versão do service worker derivada do shell | ✅ concluído | 2026-08-10 |
+| — | Modelo local por Ollama (P32) | ✅ concluído | 2026-08-10 |
 
 ---
 
@@ -782,7 +783,9 @@ auditoria de código e desenho feita por quem escreveu o código, e vale o que i
 | ~~P30~~ | ~~Só a extensão validada~~ — assinatura conferida no primeiro bloco; provado com um `MZ` renomeado | resolvido no L13 |
 | P21 | Duração máxima e pares incompatíveis são constantes em `exigencias.py`. Se a operação quiser ajustar sem deploy, viram configuração | quando pedirem |
 | P22 | API aceita datetime sem fuso e o trata como UTC. Exigir offset explícito é decisão do contrato HTTP | L12/L13 |
-| P32 | **O caminho real contra a Claude API não foi exercitado**: esta máquina não tem chave. Provado o que dá — laço, escopo, fontes e 503 — com cliente falso e com a aplicação no ar. Falta uma consulta de verdade | assim que houver chave |
+| ~~P32~~ | ~~O caminho real do modelo não foi exercitado~~ — exercitado de ponta a ponta contra um modelo **local** (`gemma4:8b` por Ollama) em 10/08/2026: consulta e rascunho, com fontes colhidas do banco. O caminho da **Claude API** continua sem uma chamada real | parcial: falta só a chave |
+| P52 | **Qualidade do modelo local é bem menor.** Medido: sem raciocínio ligado ele nem chama as ferramentas; com raciocínio, a consulta leva ~78 s e o rascunho ~169 s nesta máquina. Funciona e é seguro (as regras não dependem do modelo), mas não é a experiência do Opus | quando houver servidor com GPU |
+| P53 | **A escolha do provedor é global, não por pedido.** Uma unidade que queira o modelo local a bordo e o Opus em terra precisa de duas instâncias. Fazer por pedido exige decidir quem escolhe e como isso entra na trilha | quando pedirem |
 | P33 | Injeção via conteúdo de PT — **revisada e aceita** no L13: não faz o modelo agir, influencia redação. A contenção é estrutural e já está posta | aceito no L13 |
 | ~~P34~~ | ~~`/ai/consulta` sem limite de uso~~ — 20/min por pessoa e origem | resolvido no L13 |
 | P35 | A consulta por IA não entra na trilha. Quem perguntou o quê pode ser registro que a auditoria vai querer — esbarra em P26 (evento sem PT não tem cadeia) | L13 |
@@ -1073,3 +1076,101 @@ perguntar. Com o `ETag` que já saía, a confirmação é um `304` sem corpo.
 **259 testes.** Cinco novos, e o que mais importa é o do `304`: é ele que responde em toda
 recarga, e uma diretiva que só aparecesse no `200` deixaria justamente a resposta do dia a dia
 sem instrução nenhuma. Todos provados nos dois sentidos — desligando a sobrescrita, caem.
+
+---
+
+## Fora de loop — modelo local por Ollama (10/08/2026)
+
+A P32 estava aberta desde o L9 por falta de chave da Claude API. Em vez de esperar a chave, a
+pergunta que o William fez foi outra: *dá para ser uma IA local?* Dá — e num contexto offshore
+é melhor argumento que economia. O enlace de bordo é caro, intermitente e às vezes ausente, e o
+conteúdo de uma PT é dado operacional que não precisa sair da unidade.
+
+### Entregue
+
+- **`app/ai/local.py`** — cliente de um Ollama, traduzindo formato nos dois sentidos. Só isso.
+- **`AEGIS_AI_BASE_URL`** preenchida manda a IA para o modelo local; vazia, segue a Claude API.
+- Quatro botões de calibração, cada um pago com um defeito real: `AI_LOCAL_CONTEXTO`,
+  `AI_LOCAL_TIMEOUT`, `AI_LOCAL_NUM_GPU` e `AI_LOCAL_PENSAR`.
+
+**O laço do L9 não mudou uma linha.** `agente.conversar()` chama um único método
+(`cliente.messages.create`) e já existia o Protocol `ClienteClaude`, criado para injetar o
+cliente falso dos testes. Um modelo local é só mais uma implementação dele — a porta estava
+aberta desde o L9, sem que isso fosse o objetivo na época.
+
+### Por que trocar o modelo não mexe em nenhuma das oito regras
+
+É consequência de elas serem estruturais, e vale como a prova mais forte daquela decisão:
+nenhuma ferramenta escreve (regra 1), número de segurança vem de `app/rules/` (regra 2), a
+fonte é colhida do que o banco devolveu e não do texto (regra 3), o escopo entra na consulta
+antes da chamada (regra 5). Um modelo mais fraco **responde pior, não responde com mais
+poder**. A regra 7 dissolve: não há chave nenhuma.
+
+Isso deixou de ser argumento e virou observação: na primeira consulta real o gemma4 respondeu
+sem chamar ferramenta, e a regra 3 **descartou o texto inteiro**, devolvendo "não encontrei".
+A contenção funcionou contra um modelo que ela nunca tinha visto.
+
+### Decisões
+
+- **Tradução, não abstração.** Nenhuma camada de provedor, nenhum registro, nenhuma interface
+  com duas implementações. `construir_cliente()` tem um `if`, e o módulo local fala o formato
+  que o laço já falava. Provedor novo, se aparecer, é outro arquivo do mesmo tamanho.
+- **`num_ctx` explícito.** O padrão do Ollama é menor que a janela do modelo e o corte é
+  silencioso **e pela frente da conversa** — ou seja, come o `system`, que é onde vivem as
+  regras invioláveis. Um schema de ferramenta mais um dossiê passam desse padrão com folga.
+- **O nome da ferramenta viaja dentro do `tool_use_id`.** A Claude API devolve um id opaco e o
+  Ollama quer o *nome* de volta no resultado; guardar o nome no id evita carregar um mapa entre
+  as duas chamadas. É a tradução com mais chance de quebrar, e a que foi provada nos dois
+  sentidos.
+- **Servidor fora e servidor com erro têm mensagens diferentes.** Custou meia hora tratá-los
+  como um só: o Ollama estava no ar devolvendo 500, e a mensagem dizia "indisponível", mandando
+  procurar no lugar errado. O corpo do erro fica fora do 503 — quem lê está a bordo.
+- **`num_gpu` é botão, não configuração especulativa.** Existe porque a máquina de
+  desenvolvimento quebrou sem ele.
+
+### Os dois defeitos que só rodar de verdade pegou
+
+**O runner morria e o 500 vinha do Ollama, não do adaptador.** Com duas GPUs de 4 GB (GTX 1650
+e a Radeon integrada) e um modelo de 9,6 GB, a divisão automática de camadas estoura
+`GGML_ASSERT(n_inputs < GGML_SCHED_MAX_SPLIT_INPUTS)` e derruba o `llama-server`. Fixar
+`num_gpu` resolve. Não é defeito do projeto — é o mundo físico não sendo o do papel, e a razão
+de o botão existir em vez de só menos código.
+
+**Raciocínio desligado faz o modelo não usar ferramenta.** Eu tinha desligado por velocidade,
+achando que não afetava garantia nenhuma. Afeta o produto inteiro: medido lado a lado, sem
+raciocínio o gemma4 devolve uma pergunta de volta em 8 s (e a resposta morre sem fonte); com
+raciocínio, chama `buscar_pts` em 53 s. **Resposta inútil e rápida é pior que resposta certa e
+lenta.** O padrão passou a ser ligado.
+
+### A terceira porta da mesma armadilha
+
+A suíte quebrou ao rodar com o `.env` real: `AEGIS_AI_MODELO=gemma4:latest` vazou para o teste
+que afirma `model == "claude-opus-5"`. É a terceira vez que a configuração da máquina invade os
+testes — primeiro a chave, depois a URL do modelo local, agora o nome. O `conftest.py` fixa as
+três. Vale a generalização: **toda variável nova de `AEGIS_AI_*` nasce fixada no conftest**,
+senão a suíte passa a afirmar o que a máquina tem em vez do que o código promete.
+
+### Aceite
+
+**270 testes passando** (11 novos), nenhum saindo para a rede — o cliente local fala com um
+`httpx.MockTransport`, então nem Ollama é preciso na CI.
+
+Contra a aplicação de verdade e o banco de desenvolvimento, com `gemma4:8b`:
+
+- `POST /ai/consulta` — 78,5 s, 2 iterações, respondeu as duas PTs do banco **citando ambas
+  como fonte** (`PT-2026-0002`, `PT-2026-0001`).
+- `POST /ai/rascunho` — 168,8 s, criou a `PT-2026-0003` em `RASCUNHO`, tipo `trabalho_a_quente`,
+  quatro perigos e quatro controles concretos, e as **respostas do formulário gravadas exatamente
+  como foram enviadas** — o modelo nunca as viu (regra 2 valendo com modelo local).
+- Com o Ollama fora do ar, `503` com motivo e `/pts` seguindo em 200.
+
+### Ponto de retomada
+
+O `.env` desta máquina está no modo de bordo (`AEGIS_AI_BASE_URL` + `AEGIS_AI_MODELO=gemma4:latest`
++ `AEGIS_AI_LOCAL_NUM_GPU=10`). Para voltar ao modo de terra, comentar as duas primeiras linhas e
+preencher `AEGIS_ANTHROPIC_API_KEY`. O Ollama cai por ociosidade: `ollama serve` antes de usar.
+
+### O que continua sem tela
+
+Os dois loops de IA seguem sem interface — agora com modelo local e tudo. Dossiê, versões e
+evento compensatório também.

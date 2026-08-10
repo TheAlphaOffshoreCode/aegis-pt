@@ -41,6 +41,27 @@ class Settings(BaseSettings):
     # sem ela, e apenas as rotas de IA respondem 503.
     anthropic_api_key: str | None = None
     ai_modelo: str = "claude-opus-5"
+    # Preenchido, manda a IA para um modelo local (Ollama) e a chave deixa de ser usada — é
+    # o modo de bordo: sem enlace, sem custo por token e sem PT saindo da unidade. Quem troca
+    # a URL troca também `ai_modelo`, que passa a ser o nome do modelo local (`gemma4:latest`).
+    ai_base_url: str | None = None
+    # A janela do Ollama é bem menor que a do modelo por padrão, e o que passa dela é cortado
+    # **em silêncio, pela frente** — onde está o system com as regras invioláveis.
+    ai_local_contexto: int = 16384
+    # Um modelo local em CPU responde em dezenas de segundos. O padrão do httpx é 5 s, o que
+    # transformaria lentidão esperada em falha inventada.
+    ai_local_timeout: int = 300
+    # Camadas a mandar para a GPU. `None` deixa o Ollama decidir, que é o certo num servidor
+    # com uma placa que caiba o modelo. Numa máquina com duas GPUs pequenas a divisão
+    # automática estoura `GGML_ASSERT(n_inputs < GGML_SCHED_MAX_SPLIT_INPUTS)` e derruba o
+    # runner — ali é preciso fixar (0 força só CPU). Botão de calibração, não configuração
+    # especulativa: existe porque a máquina de desenvolvimento quebrou sem ele.
+    ai_local_num_gpu: int | None = None
+    # Raciocínio do modelo local. Ligado porque **é o que faz ele usar as ferramentas**:
+    # medido no gemma4, desligado ele devolve uma pergunta de volta em 8 s (e a resposta é
+    # descartada por não ter fonte); ligado, chama `buscar_pts` em 53 s. Resposta inútil e
+    # rápida é pior que resposta certa e lenta. Desligar só num modelo que dispense.
+    ai_local_pensar: bool = True
     # Folga de propósito: no Opus 5 o raciocínio é adaptativo e ligado por padrão, e
     # `max_tokens` limita raciocínio + resposta juntos — apertar aqui trunca no meio.
     ai_max_tokens: int = 8000

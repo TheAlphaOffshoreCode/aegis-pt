@@ -294,9 +294,31 @@ backend. Nothing under `static/` mentions it, no route returns it, and the brows
 and the rest of the application starts normally, so a missing key degrades one feature instead
 of the system.
 
-The suite never reaches the network: `tests/conftest.py` sets the key to empty on purpose (a
-key in the developer's `.env` would otherwise make the tests call out and bill), and the agent
-takes an injected client.
+The suite never reaches the network: `tests/conftest.py` pins the key, the local model URL and
+the model name (a key in the developer's `.env` would otherwise make the tests call out and
+bill), and the agent takes an injected client.
+
+### The local model
+
+`AEGIS_AI_BASE_URL` points the same loop at a model served by Ollama. It changes what the AI
+surface risks in both directions.
+
+**What it removes.** No permit content crosses the satellite link, no API key exists to leak
+or rotate, and rule 7 stops having anything to protect. For a vessel this is the stronger
+position: the data stays inside the unit that produced it.
+
+**What it does not change, and why that matters.** None of the rules above mention which model
+answers. No tool writes, safety numbers come from `app/rules/`, sources are collected from what
+the database returned, and scope enters the query before the call. A weaker model produces a
+worse answer, not a more powerful one — observed rather than argued: on the first real query
+`gemma4:8b` answered without calling a tool and rule 3 discarded the whole reply, returning
+"não encontrei". `docs/` records that as the intended behaviour, not a defect.
+
+**What it adds.** The base URL is an outbound destination read from configuration, and permit
+content is sent to it. It carries the same trust level as `AEGIS_DATABASE_URL`: whoever can set
+one can already read the database directly. It is not accepted from a request, never reaches
+the browser, and the `503` raised when the server is unreachable excludes the error body, so a
+misconfigured host does not echo back through the API.
 
 ## Draft generation (L10)
 

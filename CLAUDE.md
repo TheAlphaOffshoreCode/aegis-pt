@@ -277,6 +277,28 @@ Deviations: `SUSPENSA` (only from `EM_EXECUCAO`) and `REJEITADA` (returns to `RA
 - **`AEGIS_UPLOAD_DIR` inside `static/` now refuses to start.** It had been a comment, and a
   comment prevents nothing: that one environment variable turns every attachment into a public
   document.
+- **Every new `AEGIS_AI_*` variable is pinned in `tests/conftest.py`.** Three have leaked from
+  a developer's `.env` into the suite so far — the API key, the local model URL, then the model
+  name, which broke a passing test the day the machine switched to Ollama. A suite that reads
+  the machine's configuration asserts what that machine has, not what the code promises.
+- **`num_ctx` is sent explicitly to Ollama.** Its default is far below the model's window and
+  the overflow is dropped *silently, from the front of the conversation* — which is exactly
+  where the system prompt with the inviolable rules lives. Tool schemas plus a permit dossier
+  pass that default easily.
+- **The tool name travels inside the `tool_use_id`.** The Claude API returns an opaque id and
+  Ollama wants the tool's *name* back on the result message. Encoding it in the id is what
+  keeps the translation stateless between the two calls.
+- **Reasoning stays on for local models, and it is not a speed knob.** Measured on `gemma4:8b`:
+  with it off the model answers with a clarifying question instead of calling a tool, and the
+  reply is then discarded for having no source. A fast useless answer is worse than a slow
+  correct one.
+- **A local server that is down and one that returns 500 get different messages.** Treating
+  them as one cost half an hour of looking in the wrong place while Ollama was up and its
+  runner was crashing on load. The error body stays out of the `503` — whoever reads it is on
+  deck, not at a console.
+- **Pin `num_gpu` when the machine has more than one small GPU.** Ollama's automatic layer
+  split across two 4 GB cards trips `GGML_ASSERT(n_inputs < GGML_SCHED_MAX_SPLIT_INPUTS)` and
+  kills the runner. Left unset on a server whose card fits the model, its own choice is better.
 
 ## Conventions
 

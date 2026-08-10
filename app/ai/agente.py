@@ -74,14 +74,32 @@ class Resposta:
 
 
 class IAIndisponivel(RuntimeError):
-    """Chave da Claude API não configurada."""
+    """Não há modelo a que perguntar: chave da Claude API ausente ou servidor local fora."""
 
 
 def construir_cliente() -> ClienteClaude:
-    """Cliente real. A chave é lida aqui, no backend, e nunca sai daqui (regra 7)."""
-    chave = get_settings().anthropic_api_key
+    """Cliente real. A chave é lida aqui, no backend, e nunca sai daqui (regra 7).
+
+    Com `ai_base_url` preenchida a pergunta vai a um modelo local e nenhuma chave é usada —
+    mesmo laço, mesmas ferramentas, mesmas garantias, porque nenhuma delas depende de quem
+    responde.
+    """
+    configuracao = get_settings()
+    if configuracao.ai_base_url:
+        from app.ai.local import ClienteLocal
+
+        return ClienteLocal(
+            configuracao.ai_base_url,
+            configuracao.ai_modelo,
+            configuracao.ai_local_contexto,
+            configuracao.ai_local_timeout,
+            configuracao.ai_local_num_gpu,
+            configuracao.ai_local_pensar,
+        )
+
+    chave = configuracao.anthropic_api_key
     if not chave:
-        raise IAIndisponivel("AEGIS_ANTHROPIC_API_KEY não configurada")
+        raise IAIndisponivel("chave da Claude API não configurada")
     import anthropic
 
     return anthropic.Anthropic(api_key=chave)

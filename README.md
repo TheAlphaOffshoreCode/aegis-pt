@@ -13,7 +13,7 @@ audit trail that survives an incident investigation.
 [![CI](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml/badge.svg)](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Status: L13 of L13 — complete](https://img.shields.io/badge/status-L13_of_L13_complete-22c55e.svg)](#roadmap)
-[![Tests: 259](https://img.shields.io/badge/tests-259_passing-22c55e.svg)](#tests)
+[![Tests: 270](https://img.shields.io/badge/tests-270_passing-22c55e.svg)](#tests)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Offline capable](https://img.shields.io/badge/PWA-offline_reads-0ea5e9.svg)](#offshore-constraints)
 
@@ -61,8 +61,20 @@ POST /ai/consulta   {"pergunta": "Quais PTs de trabalho a quente estão abertas?
 
 `fontes` lists what the tools read, and the same question asked by someone posted to another
 unit retrieves nothing — the scope enters the query before the model sees a single row. Both
-of those are covered by tests that run without a network or an API key; the round trip to
-Anthropic itself is exercised the moment a key is configured.
+of those are covered by tests that run without a network or an API key.
+
+**The model can be a local one.** Point `AEGIS_AI_BASE_URL` at an Ollama server and the same
+loop, the same tools and the same guarantees run against a model on the vessel's own hardware —
+no link, no API key, and no permit content leaving the unit. That is the offshore case rather
+than a cost optimisation: the satellite link is expensive, intermittent and sometimes absent.
+
+Swapping the model is safe here precisely because none of the eight rules depend on which model
+answers. No tool writes, so a weaker model still cannot approve a permit; safety numbers come
+from the rule engine; and the sources are collected from what the database returned, so a
+hallucinated permit number gets the whole answer discarded rather than delivered. A weaker model
+answers worse — it does not answer with more authority. Verified end to end against `gemma4:8b`:
+both permits retrieved and cited, and a draft generated with the form answers passed through
+untouched by the model.
 
 Since L10 it also drafts. `POST /ai/rascunho` takes a sentence — *"preciso soldar um suporte
 de tubulação no convés principal"* — and returns a permit in `RASCUNHO` with the work type
@@ -252,6 +264,14 @@ weak key reaches production.
 backend only, never sent to the browser, and `.env` is gitignored. Without it everything else
 runs and that one route answers `503`.
 
+For a local model instead, set `AEGIS_AI_BASE_URL=http://localhost:11434` and
+`AEGIS_AI_MODELO` to the Ollama model name — one that supports tools, or the loop has nothing
+to call. The key is then unused. Two knobs exist because the development machine needed them,
+and both are commented in `.env.example`: `AEGIS_AI_LOCAL_NUM_GPU` pins how many layers go to
+the GPU (automatic splitting across two small cards crashes the ggml scheduler), and
+`AEGIS_AI_LOCAL_PENSAR` keeps the model's reasoning on, which is what makes a small model call
+the tools at all instead of answering with a question.
+
 ```powershell
 python -m alembic upgrade head
 python -m app.seed
@@ -293,9 +313,10 @@ way to create accounts with a known password.
 python -m pytest -q
 ```
 
-Two hundred and fifty-nine tests, none of which reach the network — the AI loop is exercised
-with an injected client, and the suite forces the API key empty so a key sitting in a
-developer's `.env` cannot make the tests call out and bill. The ones worth naming are those
+Two hundred and seventy tests, none of which reach the network — the AI loop is exercised
+with an injected client, and the suite forces the API key, the local model URL and the model
+name to fixed values, so nothing in a developer's `.env` can make the tests call out, bill, or
+assert what that machine happens to have installed. The ones worth naming are those
 that fail loudly the day a guarantee quietly stops holding:
 
 - the audit chain **detects tampering** — a row edited through raw SQL, bypassing the

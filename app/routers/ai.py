@@ -18,7 +18,7 @@ from app.security.limite import IA, chave_do_pedido
 
 router = APIRouter(prefix="/ai", tags=["ia"])
 
-SEM_CHAVE = "Consulta por IA indisponível: chave da Claude API não configurada"
+SEM_MODELO = "Consulta por IA indisponível: {motivo}"
 
 
 @router.post("/consulta", response_model=ConsultaResponse)
@@ -36,8 +36,10 @@ def consulta(
     _limitar(request, usuario)
     try:
         resultado = agente.responder(db, usuario, dados.pergunta)
-    except agente.IAIndisponivel:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, SEM_CHAVE) from None
+    except agente.IAIndisponivel as erro:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, SEM_MODELO.format(motivo=erro)
+        ) from None
 
     return ConsultaResponse(
         resposta=resultado.texto,
@@ -68,8 +70,10 @@ def propor_rascunho(
     )
     try:
         resultado = rascunho.propor(db, usuario, dados.model_dump(), contexto=contexto)
-    except agente.IAIndisponivel:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, SEM_CHAVE) from None
+    except agente.IAIndisponivel as erro:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, SEM_MODELO.format(motivo=erro)
+        ) from None
     except rascunho.PropostaInvalida as erro:
         # 502: quem falhou foi o serviço de IA, não o pedido de quem chamou.
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(erro)) from None

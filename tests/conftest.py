@@ -10,6 +10,12 @@ os.environ["AEGIS_UPLOAD_DIR"] = "./test_uploads"
 # Vazio de propósito, e não ausente: uma chave no `.env` da máquina faria a suíte sair para a
 # rede e cobrar. Sem chave, o agente só roda com o cliente falso injetado pelo teste.
 os.environ["AEGIS_ANTHROPIC_API_KEY"] = ""
+# Mesma armadilha pela porta do lado: com um Ollama configurado na máquina, a suíte sairia
+# para ele. Vazia, o agente continua só com o cliente falso que o teste injeta.
+os.environ["AEGIS_AI_BASE_URL"] = ""
+# E o modelo junto: quem aponta o `.env` para um modelo local muda o nome também, e a suíte
+# passaria a afirmar o que a máquina tem em vez do que o código promete.
+os.environ["AEGIS_AI_MODELO"] = "claude-opus-5"
 
 import shutil  # noqa: E402
 from collections.abc import Callable, Iterator  # noqa: E402
