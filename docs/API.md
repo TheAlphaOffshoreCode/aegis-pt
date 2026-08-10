@@ -60,6 +60,25 @@ Requires `Authorization: Bearer <token>`. Returns who is authenticated and what 
 `unidades: null` means global reach (`auditor`, `admin`). An empty list means the account has
 no posting and therefore sees nothing — the scope fails closed.
 
+### `GET /areas`
+
+The operational areas the caller reaches, ordered by unit and code. It exists because issuing a
+permit needs one: `area_id` is required and there was nowhere to get it from without querying
+the database out of band.
+
+Scoped in the query like everything else (rule 5). Area codes and names already describe what
+exists aboard a unit, so the list is not neutral information.
+
+### `GET /pts/modelos`
+
+One active model per work type, the highest version of each. The issue screen builds its type
+selector from this rather than from the `TipoTrabalho` enum, for two reasons: a type with no
+model is a dead end — you pick it, the form never loads, and issuing dies there — and a fixed
+list of types in the JavaScript was a second copy of the enum, free to drift from it.
+
+Deactivating a model therefore removes its type from the screen, which is what deactivating is
+supposed to mean.
+
 ### `GET /pts/modelos/{tipo_trabalho}`
 
 The active form definition for a work type — what the PWA renders the screen from. Each field

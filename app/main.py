@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 import logging
 
 from app.config import get_settings
-from app.routers import ai, auth, health, indicadores, pts
+from app.routers import ai, auth, health, indicadores, organizacao, pts
 from app.rules.pendencias import ConflitoDeNegocio
 from app.security.cabecalhos import CABECALHOS, CabecalhosDeSeguranca
 
@@ -77,6 +77,7 @@ app.include_router(auth.router)
 app.include_router(pts.router)
 app.include_router(ai.router)
 app.include_router(indicadores.router)
+app.include_router(organizacao.router)
 
 # Montado em /static, e não em "/", para que nenhum router incluído depois seja engolido.
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

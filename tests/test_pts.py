@@ -242,6 +242,63 @@ def test_modelo_do_tipo_entrega_os_campos_do_formulario(
     assert [campo["chave"] for campo in corpo["campos"]] == ["altura_metros", "ancoragem"]
 
 
+def test_modelos_ativos_lista_um_por_tipo_e_nao_e_engolida_por_pt_id(
+    client: TestClient, cenario: dict, criar_usuario: Callable[..., Usuario],
+    autenticar: Callable[[str], dict[str, str]],
+) -> None:
+    """A tela de emissão monta o seletor de tipo com esta lista.
+
+    Dois motivos para ela existir: oferecer um tipo sem modelo cadastrado é um beco — a pessoa
+    escolhe, o formulário não carrega e a emissão morre ali —, e a lista fixa de tipos no
+    JavaScript era uma segunda cópia do enum, livre para divergir.
+
+    `/pts/modelos` é literal e disputa com `/pts/{pt_id}`: registrada depois, nunca seria
+    alcançada, e o `pt_id` responderia 422 tentando ler "modelos" como inteiro.
+    """
+    criar_usuario(matricula="70001", unidade_id=cenario["alfa"].id)
+
+    corpo = client.get("/pts/modelos", headers=autenticar("70001")).json()
+
+    assert {m["tipo_trabalho"] for m in corpo} == {"trabalho_em_altura", "trabalho_a_quente"}
+    assert len(corpo) == 2, "um modelo por tipo, não um por versão"
+
+
+def test_modelo_inativo_fica_de_fora_do_seletor(
+    client: TestClient, db: Session, cenario: dict, criar_usuario: Callable[..., Usuario],
+    autenticar: Callable[[str], dict[str, str]],
+) -> None:
+    """Desativar um modelo tem de tirar o tipo da tela, senão desativar não desativa nada."""
+    criar_usuario(matricula="70001", unidade_id=cenario["alfa"].id)
+    cenario["modelo_quente"].ativo = False
+    db.commit()
+
+    corpo = client.get("/pts/modelos", headers=autenticar("70001")).json()
+
+    assert [m["tipo_trabalho"] for m in corpo] == ["trabalho_em_altura"]
+
+
+def test_areas_respeitam_o_escopo_de_quem_pergunta(
+    client: TestClient, cenario: dict, criar_usuario: Callable[..., Usuario],
+    autenticar: Callable[[str], dict[str, str]],
+) -> None:
+    """Regra 5 também vale para o cadastro: código e nome de área dizem o que existe a bordo.
+
+    A rota nasceu para a emissão — `area_id` é obrigatório na PT e não havia de onde tirá-lo
+    sem consultar o banco por fora.
+    """
+    criar_usuario(matricula="70001", unidade_id=cenario["alfa"].id)
+    criar_usuario(matricula="70002", unidade_id=cenario["beta"].id)
+    criar_usuario(matricula="70003", perfil=PerfilUsuario.AUDITOR)
+
+    def unidades(matricula: str) -> set[int]:
+        return {a["unidade_id"] for a in client.get("/areas", headers=autenticar(matricula)).json()}
+
+    assert unidades("70001") == {cenario["alfa"].id}
+    assert unidades("70002") == {cenario["beta"].id}
+    assert unidades("70003") == {cenario["alfa"].id, cenario["beta"].id}
+    assert client.get("/areas").status_code == 401
+
+
 def test_equipe_com_membro_inexistente_vira_pendencia_e_nao_erro_de_banco(
     client: TestClient, cenario: dict, criar_usuario: Callable[..., Usuario],
     autenticar: Callable[[str], dict[str, str]],

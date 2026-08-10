@@ -7,10 +7,15 @@ instalar e de abrir sem sinal, que é justamente o que este loop entregou.
 
 import json
 import re
+from collections.abc import Callable
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+
+from app.models.pessoa import Usuario
+from app.models.tipos import agora_utc
 
 ESTATICO = Path(__file__).resolve().parent.parent / "static"
 
@@ -138,3 +143,46 @@ def test_o_frontend_nao_itera_resposta_que_nao_e_lista(client: TestClient) -> No
     # Sem isto a conferência se desliga em silêncio: basta o regex deixar de casar, ou uma
     # rota mudar de forma, para o laço passar batido e o teste virar verde permanente.
     assert conferidas >= 5, f"a conferência só alcançou {conferidas} chamadas — regex quebrado?"
+
+
+def test_a_tela_sabe_ler_o_erro_de_validacao_da_api(
+    client: TestClient,
+    criar_usuario: Callable[..., Usuario],
+    autenticar: Callable[[str], dict[str, str]],
+) -> None:
+    """Um `422` tem de chegar à tela com texto, e não como caixa vermelha vazia.
+
+    Duas listas diferentes caem no mesmo `ErroDaApi`: o `409` traz pendências do motor de regras
+    (`mensagem`, `codigo`) e o `422` traz erros do Pydantic, que usam `msg`. Enquanto o `app.js`
+    só conhecia as duas primeiras, todo `422` virava string vazia — e o caso é banal, basta
+    emitir com a janela de validade invertida.
+
+    O teste extrai do próprio `app.js` as chaves que ele sabe ler e confere contra o que a API
+    devolve de fato. Pega os dois lados: a API mudar de formato, ou alguém encurtar a lista no
+    JavaScript. O que ele **não** pega é o texto ficar ilegível na tela — para isso faltaria um
+    runner de JavaScript (P48).
+    """
+    criar_usuario(matricula="70001")
+    inicio = agora_utc()
+    resposta = client.post(
+        "/pts",
+        headers=autenticar("70001"),
+        json={
+            "unidade_id": 1, "area_id": 1, "tipo_trabalho": "trabalho_a_quente",
+            "modelo_pt_id": 1, "descricao": "janela invertida de propósito",
+            # Fim antes do início: recusado pelo validador do schema, antes de tocar o banco.
+            "valida_de": (inicio + timedelta(hours=8)).isoformat(),
+            "valida_ate": inicio.isoformat(),
+            "respostas": {},
+        },
+    )
+    assert resposta.status_code == 422, resposta.text
+
+    js = (ESTATICO / "js" / "app.js").read_text(encoding="utf-8")
+    chave = re.search(r"corpo\.detail\.map\(\(p\) => ([^)]+)\)", js)
+    assert chave, "não achei como o app.js lê a lista de erros"
+    conhecidas = set(re.findall(r"p\.(\w+)", chave.group(1)))
+
+    for item in resposta.json()["detail"]:
+        legivel = [item[k] for k in conhecidas if item.get(k)]
+        assert legivel, f"a tela não teria texto para mostrar deste item: {item}"

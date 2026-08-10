@@ -13,7 +13,7 @@ audit trail that survives an incident investigation.
 [![CI](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml/badge.svg)](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Status: L13 of L13 — complete](https://img.shields.io/badge/status-L13_of_L13_complete-22c55e.svg)](#roadmap)
-[![Tests: 247](https://img.shields.io/badge/tests-247_passing-22c55e.svg)](#tests)
+[![Tests: 251](https://img.shields.io/badge/tests-251_passing-22c55e.svg)](#tests)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Offline capable](https://img.shields.io/badge/PWA-offline_reads-0ea5e9.svg)](#offshore-constraints)
 
@@ -85,8 +85,8 @@ investigation later needs to find. And escalation is a function of the clock rat
 counter, so running the sync more often cannot inflate the urgency of anything.
 
 L12 turned it into something you can actually use on a deck. Real screens — login, the permit
-list, a permit with its dynamic form and available steps, the board — installable, dark, and
-readable offline. The identity fonts are vendored rather than fetched: a font that only loads
+list, issuing a permit, a permit with its dynamic form, attachments and available steps, the
+board — installable, dark, and readable offline. The identity fonts are vendored rather than fetched: a font that only loads
 online is an identity that disappears exactly offshore.
 
 The part worth explaining is the sync, because it is where an offline app usually lies. Every
@@ -265,7 +265,7 @@ way to create accounts with a known password.
 python -m pytest -q
 ```
 
-Two hundred and forty-seven tests, none of which reach the network — the AI loop is exercised
+Two hundred and fifty-one tests, none of which reach the network — the AI loop is exercised
 with an injected client, and the suite forces the API key empty so a key sitting in a
 developer's `.env` cannot make the tests call out and bill. The ones worth naming are those
 that fail loudly the day a guarantee quietly stops holding:
@@ -307,7 +307,13 @@ that fail loudly the day a guarantee quietly stops holding:
   report as tampering forever;
 - **the screens are checked against the shapes the endpoints actually return** — every `api()`
   call in `app.js` is matched against the live OpenAPI schema, so a response consumed as a list
-  when it is an object fails the suite instead of the screen.
+  when it is an object fails the suite instead of the screen;
+- **areas are scoped like everything else**, and **deactivating a form model removes its work
+  type from the issue screen** — a type with no model would be a dead end the screen offers
+  anyway;
+- **a validation error reaches the screen with text in it** — `409` carries the rule engine's
+  `mensagem`, `422` carries Pydantic's `msg`, and while the screen only knew the first the red
+  box came up empty on something as ordinary as an inverted validity window.
 
 Thirty-seven of them touch no database at all — the rule engine, the state machine and the form
 validator are pure functions, and those thirty-seven run in **0.07 s** against roughly forty-five
@@ -324,6 +330,8 @@ also how CI runs them, on 3.11 and 3.14.
 | `GET` | `/health` | Liveness plus a real `SELECT 1` against the database |
 | `POST` | `/auth/login` | Matrícula and password for a bearer token |
 | `GET` | `/auth/eu` | Who is authenticated, and which units they reach |
+| `GET` | `/areas` | Operational areas in scope — what the issue screen picks from |
+| `GET` | `/pts/modelos` | One active model per work type; the type selector's only source |
 | `GET` | `/pts/modelos/{tipo_trabalho}` | Form definition for a work type |
 | `POST` | `/pts` | Opens a permit in `RASCUNHO` |
 | `GET` | `/pts` | Structured search, paginated, scoped in query **and** count |

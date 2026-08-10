@@ -403,7 +403,8 @@ button:focus-visible {
   font-size: 13px;
 }
 
-.pendencia {
+.pendencia,
+.anexo {
   display: flex;
   gap: 9px;
   align-items: baseline;
@@ -412,7 +413,8 @@ button:focus-visible {
   font-size: 13px;
 }
 
-.pendencia:last-child { border-bottom: none; }
+.pendencia:last-child,
+.anexo:last-child { border-bottom: none; }
 
 /* Não há bloco de `prefers-reduced-motion` porque não há animação nem transição nenhuma
    nesta folha. Um `animation: none !important` global aqui seria código morto que ainda por

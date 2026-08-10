@@ -32,6 +32,10 @@ const ARQUIVOS_DO_SHELL = [
 
 // Só leitura entra no cache de dados. `/auth` fica de fora de propósito: token em cache é
 // credencial deixada em disco no tablet compartilhado do convés.
+//
+// `/areas` também fica de fora, e não por esquecimento: a lista existe para a tela de emissão,
+// que exige rede de qualquer forma. Guardá-la seria pôr no disco do tablet o que existe a
+// bordo, em troca de nada.
 const CACHEAVEL = [/^\/pts(\/|$|\?)/, /^\/indicadores/, /^\/alertas/];
 
 self.addEventListener("install", (evento) => {

@@ -20,6 +20,7 @@ Fonte de verdade para retomar o trabalho. Atualizado ao fim de cada loop.
 | L12 | PWA e operação offline | ✅ concluído | 2026-08-08 |
 | L13 | Auditoria de segurança e fechamento | ✅ concluído | 2026-08-08 |
 | — | Verificação independente (P49, P50) | ✅ concluído | 2026-08-09 |
+| — | Tela de emissão e anexos | ✅ concluído | 2026-08-09 |
 
 ---
 
@@ -796,6 +797,7 @@ auditoria de código e desenho feita por quem escreveu o código, e vale o que i
 | P46 | Anexar arquivo offline não existe: a fila guarda correção de rascunho, não binário. Exigiria IndexedDB | quando pedirem |
 | ~~P47~~ | ~~Assinar sobre leitura velha~~ — `visto_em` opcional na transição, recusa com `documento_alterado` | resolvido no L13 |
 | P48 | Nenhum teste roda o JavaScript: não há runner no projeto. As telas foram verificadas com `node --check`, pelos contratos dos endpoints e rodando a aplicação | quando houver caso |
+| P51 | **Suíte intermitente no Windows.** Numa de três execuções completas, `test_alertas.py::test_pt_em_execucao_com_janela_encerrada_gera_alerta_critico` deu **ERROR de fixture** (`250 passed, 1 error`); isolado e nas outras duas rodadas, passa. A fixture `db` faz `create_all`/`drop_all` sobre o mesmo `test_aegis.db` a cada teste, e o arquivo continua aberto pelo pool entre um e outro. Banco em memória ou por-arquivo temporário resolveria; não reproduzido ainda | quando reproduzir |
 
 ### Ponto exato de retomada
 
@@ -898,3 +900,64 @@ cobertura.
 **247 testes passando** (2 novos). Auditoria completa, incluindo o que foi conferido e nada tinha:
 sem injeção de SQL, sem segredo no código, sem `eval`/`subprocess`; upload, download, JWT, Argon2,
 escopo e ferramentas da IA todos íntegros.
+
+---
+
+## Fora de loop — a tela fecha o ciclo (09/08/2026)
+
+Ao abrir a aplicação, o William notou que ela parecia servir só para **consultar** PTs já
+existentes. Estava certo: a interface tinha quatro rotas (login, lista, detalhe, painel) e
+consumia 8 dos 21 endpoints. Emitir uma PT e anexar documento existiam no backend, com teste e
+documentação, e não tinham tela. O sintoma mais afiado era o detalhe mostrar "documento APR não
+foi anexado — bloqueante" sem oferecer nenhum jeito de anexar: a tela informava um impedimento
+que ela mesma não deixava resolver.
+
+### Entregue
+
+- **`GET /areas`** — áreas do escopo de quem pergunta. Nasceu por necessidade: `area_id` é
+  obrigatório na PT e não havia de onde tirá-lo sem consultar o banco por fora. Escopo na
+  consulta, como todo o resto: código e nome de área já dizem o que existe a bordo.
+- **`GET /pts/modelos`** — um modelo ativo por tipo, o de maior versão.
+- **Tela de emissão** (`#/nova`), com o formulário dinâmico do modelo escolhido.
+- **Bloco de anexos** no detalhe: listar, enviar, baixar e remover (remoção só no rascunho, e o
+  servidor confere de novo).
+
+### Decisões
+
+- **O seletor de tipo sai de `/pts/modelos`, não do enum.** Descoberto rodando: a primeira
+  versão oferecia os seis `TipoTrabalho` e o seed só tem dois modelos. Escolher
+  `espaco_confinado` levava a "formulário indisponível" e a emissão morria ali. Oferecer só o
+  que dá para emitir é o seletor dizendo a verdade — e de quebra sumiu a lista fixa de tipos no
+  JavaScript, que era uma segunda cópia do enum livre para divergir.
+- **A unidade sai da área escolhida, não do usuário.** Admin não tem lotação, e é a área que
+  sabe a que unidade o trabalho pertence.
+- **Emitir exige rede**, como assinar transição. O número da PT é do servidor; sair da tela com
+  uma PT que ainda não existe é pior do que não emitir.
+- **`datetime-local` é convertido para UTC antes de sair** (`instanteUtc`). O campo entrega
+  hora sem fuso e a API trata data sem fuso como UTC — enviar cru faria a janela de validade de
+  uma PT emitida no Brasil nascer três horas fora do lugar. Janela de validade é número de
+  segurança.
+- **`api()` não escreve `Content-Type` quando o corpo é `FormData`.** Quem conhece o `boundary`
+  é o navegador; declarar `application/json` faria o upload chegar como um corpo ilegível.
+- **`/areas` fica fora do cache do service worker.** A lista serve à emissão, que exige rede de
+  qualquer forma: guardá-la seria pôr no disco do tablet o que existe a bordo em troca de nada.
+- **O download do anexo entra no documento antes do clique e revoga o blob depois.** Âncora
+  solta com revogação imediata funciona no Chrome e falha calada em outros navegadores — o
+  arquivo não desce e nada aparece na tela.
+
+### Aceite
+
+**251 testes passando** (3 novos). O escopo de `/areas` foi provado nos dois sentidos:
+desligando o filtro, o teste cai. Fluxo conferido na aplicação de verdade, num Chrome dirigido
+por CDP: PT-2026-0002 emitida pela tela, APR anexada, e a pendência bloqueante mudou de APR para
+ASO — o motor de regras respondendo à ação feita na interface.
+
+Duas recusas legítimas apareceram no caminho e valem registro, porque são a proteção
+funcionando: emitir sem preencher campo obrigatório do modelo devolveu `409` com a pendência
+nomeando o campo, e o tipo sem modelo foi barrado antes do envio.
+
+### O que continua sem tela
+
+`GET /pts/{id}/trilha` (a trilha, que é a justificativa do produto), dossiê, versões, evento
+compensatório, `POST /ai/consulta` e `POST /ai/rascunho` — os dois loops de IA inteiros — e
+`POST /alertas/sincronizar` (o P41). Nada disso é novo; o que muda é que agora está escrito.

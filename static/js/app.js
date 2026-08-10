@@ -84,7 +84,12 @@ class ErroDaApi extends Error {
 
   static mensagem(status, corpo) {
     if (Array.isArray(corpo?.detail)) {
-      return corpo.detail.map((p) => p.mensagem || p.codigo).join(" · ");
+      // Duas listas diferentes chegam aqui. O `409` traz pendências do motor de regras
+      // (`mensagem`, `codigo`); o `422` traz erros do Pydantic, que usam `msg`. Sem esta
+      // terceira alternativa o `map` devolvia `undefined` para cada item e o `join` entregava
+      // string vazia — a tela abria a caixa vermelha **sem texto nenhum**, e o caso é banal:
+      // basta emitir uma PT com a janela de validade invertida.
+      return corpo.detail.map((p) => p.mensagem || p.codigo || p.msg).join(" · ");
     }
     return corpo?.detail || `Erro ${status}`;
   }
@@ -93,7 +98,12 @@ class ErroDaApi extends Error {
 async function api(caminho, opcoes = {}) {
   const cabecalhos = { ...(opcoes.headers || {}) };
   if (API.token) cabecalhos.Authorization = `Bearer ${API.token}`;
-  if (opcoes.body) cabecalhos["Content-Type"] = "application/json";
+  // `FormData` fica de fora: quem tem de escrever o `Content-Type` é o navegador, porque só
+  // ele conhece o `boundary` que separa as partes. Declarar `application/json` aqui faria o
+  // upload de anexo chegar ao servidor como um corpo que ninguém consegue ler.
+  if (opcoes.body && !(opcoes.body instanceof FormData)) {
+    cabecalhos["Content-Type"] = "application/json";
+  }
 
   const resposta = await fetch(caminho, { ...opcoes, headers: cabecalhos });
   const corpo = resposta.status === 204 ? null : await resposta.json().catch(() => null);
@@ -250,6 +260,18 @@ const ESTADOS = [
   "EM_EXECUCAO", "SUSPENSA", "ENCERRADA", "REJEITADA", "ARQUIVADA",
 ];
 
+const TIPOS_ANEXO = ["apr", "aso", "certificado", "relatorio", "foto", "croqui"];
+
+/** Converte o que o `datetime-local` devolve no instante UTC correspondente.
+ *
+ * O campo entrega `2026-08-09T20:46`, sem fuso, e a API trata data sem fuso como UTC. Enviar
+ * o valor cru faria a janela de validade de uma PT emitida no Brasil nascer três horas fora do
+ * lugar — e janela de validade é número de segurança, não detalhe de formatação.
+ */
+function instanteUtc(valorLocal) {
+  return new Date(valorLocal).toISOString();
+}
+
 async function telaLista(parametros) {
   const secao = el("section");
   const filtroEstado = new URLSearchParams(parametros).get("estado") || "";
@@ -340,6 +362,114 @@ function campoDoFormulario(campo, valor, aoMudar) {
   ]);
 }
 
+async function telaNova() {
+  const secao = el("section");
+  const bloco = el("section", { class: "painel" }, [el("h2", { texto: "Emitir PT" })]);
+  const destino = el("div");
+  const respostas = {};
+
+  let areas;
+  let modelos;
+  try {
+    [areas, modelos] = await Promise.all([api("/areas"), api("/pts/modelos")]);
+  } catch (erro) {
+    return aviso(erro.message, "erro", "Não foi possível carregar a tela");
+  }
+  if (!areas.length || !modelos.length) {
+    return aviso(
+      "Falta cadastro para emitir: " +
+        (!areas.length ? "nenhuma área no seu escopo. " : "") +
+        (!modelos.length ? "nenhum modelo de PT ativo. " : "") +
+        "Isso é cadastro da unidade, não se cria por aqui.",
+      "",
+      "Sem onde emitir"
+    );
+  }
+
+  const area = el("select", { name: "area" },
+    areas.map((a) => el("option", { value: a.id, texto: `${a.codigo} — ${a.nome}` }))
+  );
+  // O seletor sai dos modelos existentes, e não da lista de tipos: tipo sem modelo é um beco.
+  const tipo = el("select", { name: "tipo_trabalho" },
+    modelos.map((m) => el("option", { value: m.tipo_trabalho, texto: m.tipo_trabalho }))
+  );
+  const descricao = el("textarea", { name: "descricao" });
+  const de = el("input", { type: "datetime-local", name: "valida_de" });
+  const ate = el("input", { type: "datetime-local", name: "valida_ate" });
+  const campos = el("div");
+
+  // O formulário vem do modelo, não da tela: trocar o tipo troca as perguntas, e as respostas
+  // anteriores deixam de valer.
+  function montarFormulario() {
+    const modelo = modelos.find((m) => m.tipo_trabalho === tipo.value);
+    campos.replaceChildren();
+    for (const chave of Object.keys(respostas)) delete respostas[chave];
+    for (const campo of modelo.campos) {
+      campos.append(
+        campoDoFormulario(campo, undefined, (chave, valor) => {
+          respostas[chave] = valor;
+        })
+      );
+    }
+  }
+  tipo.addEventListener("change", montarFormulario);
+  montarFormulario();
+
+  bloco.append(
+    el("label", {}, [el("span", { class: "rotulo", texto: "Tipo de trabalho *" }), tipo]),
+    el("label", {}, [el("span", { class: "rotulo", texto: "Área *" }), area]),
+    el("label", {}, [el("span", { class: "rotulo", texto: "Descrição do serviço *" }), descricao]),
+    el("label", {}, [el("span", { class: "rotulo", texto: "Válida de *" }), de]),
+    el("label", {}, [el("span", { class: "rotulo", texto: "Válida até *" }), ate]),
+    campos,
+    destino,
+    el("div", { class: "acoes" }, [
+      el("button", {
+        texto: "Emitir",
+        onclick: async () => {
+          if (!de.value || !ate.value || !descricao.value.trim()) {
+            destino.replaceChildren(
+              aviso("Descrição e janela de validade são obrigatórias.", "erro", "Faltam campos")
+            );
+            return;
+          }
+          // A unidade sai da área escolhida, e não do usuário: um admin não tem lotação, e a
+          // área é quem sabe a que unidade o trabalho pertence.
+          const escolhida = areas.find((a) => String(a.id) === area.value);
+          const modelo = modelos.find((m) => m.tipo_trabalho === tipo.value);
+          try {
+            const pt = await api("/pts", {
+              method: "POST",
+              body: JSON.stringify({
+                unidade_id: escolhida.unidade_id,
+                area_id: escolhida.id,
+                tipo_trabalho: tipo.value,
+                modelo_pt_id: modelo.id,
+                descricao: descricao.value,
+                valida_de: instanteUtc(de.value),
+                valida_ate: instanteUtc(ate.value),
+                respostas,
+              }),
+            });
+            location.hash = `#/pt/${pt.id}`;
+            rotear();
+          } catch (erro) {
+            destino.replaceChildren(aviso(erro.message, "erro", "Emissão recusada"));
+          }
+        },
+      }),
+    ])
+  );
+
+  secao.append(
+    bloco,
+    // Emitir não vai para a fila offline, ao contrário de corrigir rascunho: o número da PT é
+    // do servidor, e sair da tela com uma PT que ainda não existe é pior que não emitir.
+    el("p", { class: "vazio", texto: "A emissão exige conexão." })
+  );
+  return secao;
+}
+
 async function telaDetalhe(id) {
   const secao = el("section");
 
@@ -416,6 +546,9 @@ async function telaDetalhe(id) {
     secao.append(aviso(erro.message, "", "Pendências indisponíveis"));
   }
 
+  // --- anexos ---
+  secao.append(await blocoDeAnexos(pt));
+
   // --- edição do rascunho ---
   if (pt.estado === "RASCUNHO") {
     secao.append(await blocoDeEdicao(pt));
@@ -424,6 +557,117 @@ async function telaDetalhe(id) {
   // --- transições: exigem rede ---
   secao.append(await blocoDeTransicoes(pt));
   return secao;
+}
+
+/** Baixa um anexo e entrega ao navegador.
+ *
+ * Não dá para usar um `<a href>` simples: a rota exige o `Authorization`, e um link não leva
+ * cabeçalho. Daí o `fetch` com o token e um `blob` local.
+ *
+ * O link entra no documento antes do clique e a URL temporária só é revogada depois: âncora
+ * solta e revogação imediata funcionam no Chrome e falham calado em outros navegadores — o
+ * arquivo simplesmente não desce, sem erro nenhum na tela. Revogar importa: sem isso o blob
+ * fica retido até a aba fechar, e um tablet de convés fica aberto o turno inteiro.
+ */
+async function baixarAnexo(pt, anexo) {
+  const resposta = await fetch(`/pts/${pt.id}/anexos/${anexo.id}/conteudo`, {
+    headers: { Authorization: `Bearer ${API.token}` },
+  });
+  if (!resposta.ok) throw new ErroDaApi(resposta.status, await resposta.json().catch(() => null));
+
+  const url = URL.createObjectURL(await resposta.blob());
+  const link = el("a", { href: url, download: anexo.nome_arquivo });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
+async function blocoDeAnexos(pt) {
+  const bloco = el("section", { class: "painel" }, [el("h2", { texto: "Anexos" })]);
+  const destino = el("div");
+
+  let anexos;
+  try {
+    anexos = await api(`/pts/${pt.id}/anexos`);
+  } catch (erro) {
+    bloco.append(aviso(erro.message, "", "Anexos indisponíveis"));
+    return bloco;
+  }
+
+  if (!anexos.length) {
+    bloco.append(el("p", { class: "vazio", texto: "Nenhum anexo." }));
+  }
+  for (const anexo of anexos) {
+    bloco.append(
+      el("div", { class: "anexo" }, [
+        el("span", { class: "chip", texto: anexo.tipo }),
+        el("span", { texto: anexo.nome_arquivo }),
+        el("button", {
+          class: "secundario",
+          texto: "Baixar",
+          onclick: async () => {
+            try {
+              await baixarAnexo(pt, anexo);
+            } catch (erro) {
+              destino.replaceChildren(aviso(erro.message, "erro", "Download recusado"));
+            }
+          },
+        }),
+        // Só no rascunho, e o servidor confere de novo: depois que a PT circulou, o anexo faz
+        // parte do que as pessoas analisaram e assinaram.
+        pt.estado !== "RASCUNHO" ? null : el("button", {
+          class: "secundario",
+          texto: "Remover",
+          onclick: async () => {
+            try {
+              await api(`/pts/${pt.id}/anexos/${anexo.id}`, { method: "DELETE" });
+              rotear();
+            } catch (erro) {
+              destino.replaceChildren(aviso(erro.message, "erro", "Remoção recusada"));
+            }
+          },
+        }),
+      ])
+    );
+  }
+
+  const arquivo = el("input", { type: "file", name: "arquivo", accept: ".pdf,.jpg,.jpeg,.png" });
+  const tipo = el("select", { name: "tipo" },
+    TIPOS_ANEXO.map((t) => el("option", { value: t, texto: t }))
+  );
+  const validade = el("input", { type: "date", name: "valido_ate" });
+
+  bloco.append(
+    el("label", {}, [el("span", { class: "rotulo", texto: "Arquivo" }), arquivo]),
+    el("label", {}, [el("span", { class: "rotulo", texto: "Tipo" }), tipo]),
+    el("label", {}, [el("span", { class: "rotulo", texto: "Válido até (opcional)" }), validade]),
+    destino,
+    el("div", { class: "acoes" }, [
+      el("button", {
+        texto: "Anexar",
+        onclick: async () => {
+          if (!arquivo.files.length) {
+            destino.replaceChildren(aviso("Escolha um arquivo.", "erro", "Nada para anexar"));
+            return;
+          }
+          // O servidor decide o que entra: extensão permitida, bytes que confiram com ela e
+          // tamanho. O `accept` acima é conveniência de tela, nunca a conferência.
+          const corpo = new FormData();
+          corpo.append("arquivo", arquivo.files[0]);
+          corpo.append("tipo", tipo.value);
+          if (validade.value) corpo.append("valido_ate", validade.value);
+          try {
+            await api(`/pts/${pt.id}/anexos`, { method: "POST", body: corpo });
+            rotear();
+          } catch (erro) {
+            destino.replaceChildren(aviso(erro.message, "erro", "Anexo recusado"));
+          }
+        },
+      }),
+    ])
+  );
+  return bloco;
 }
 
 async function blocoDeEdicao(pt) {
@@ -654,6 +898,7 @@ async function rotear() {
   try {
     if (partes[0] === "sair") return sair();
     if (partes[0] === "login") conteudo = telaLogin();
+    else if (partes[0] === "nova") conteudo = await telaNova();
     else if (partes[0] === "pt") conteudo = await telaDetalhe(partes[1]);
     else if (partes[0] === "painel") conteudo = await telaPainel();
     else conteudo = await telaLista(parametros);

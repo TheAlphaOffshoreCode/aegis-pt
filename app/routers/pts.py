@@ -37,8 +37,31 @@ from app.services.transicoes import executar_transicao, transicoes_disponiveis
 router = APIRouter(prefix="/pts", tags=["permissões de trabalho"])
 
 
-# Declarado antes de `/{pt_id}`: registrada depois, esta rota nunca seria alcançada,
-# porque o Starlette casa na ordem de registro.
+# Estas duas vêm antes de `/{pt_id}`: registradas depois, nunca seriam alcançadas, porque o
+# Starlette casa na ordem de registro — e o `pt_id` responderia 422 tentando ler "modelos" como
+# inteiro.
+@router.get("/modelos", response_model=list[ModeloPTRead])
+def modelos_ativos(
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(usuario_atual),
+) -> list[ModeloPT]:
+    """Um modelo ativo por tipo de trabalho, o de maior versão.
+
+    A tela de emissão monta o seletor de tipo com isto, e não com a lista de `TipoTrabalho` —
+    tipo sem modelo cadastrado é um beco, em que a pessoa escolhe, o formulário não carrega e a
+    emissão morre ali. Oferecer só o que dá para emitir é o próprio seletor dizendo a verdade.
+    """
+    modelos = db.scalars(
+        select(ModeloPT)
+        .where(ModeloPT.ativo.is_(True))
+        .order_by(ModeloPT.tipo_trabalho, ModeloPT.versao.desc())
+    )
+    por_tipo: dict[TipoTrabalho, ModeloPT] = {}
+    for modelo in modelos:
+        por_tipo.setdefault(modelo.tipo_trabalho, modelo)
+    return list(por_tipo.values())
+
+
 @router.get("/modelos/{tipo_trabalho}", response_model=ModeloPTRead)
 def modelo_do_tipo(
     tipo_trabalho: TipoTrabalho,
