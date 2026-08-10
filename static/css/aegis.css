@@ -451,8 +451,10 @@ details.painel > summary:focus-visible {
 }
 
 /* Respiro entre o veredito da cadeia e o primeiro elo: sem isto o chip encosta no evento e as
-   duas informações parecem uma coisa só. */
-.evento:first-of-type { margin-top: 10px; }
+   duas informações parecem uma coisa só. A margem fica no veredito, e não num
+   `.evento:first-of-type`, porque `first-of-type` conta por *tipo* de elemento: bastaria o
+   aviso de dado local (também um `div`) vir antes para nenhum evento casar com a regra. */
+.chip.integra { margin-bottom: 10px; }
 
 .evento:last-child { border-bottom: none; }
 

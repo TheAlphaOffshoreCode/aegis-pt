@@ -1,5 +1,6 @@
 """Alertas e indicadores: quando existem, para quem sobem, e quem os enxerga."""
 
+import re
 from collections.abc import Callable
 from datetime import datetime, timedelta
 
@@ -448,7 +449,9 @@ def test_o_comando_do_agendador_roda_uma_passagem(
 
     saida = capsys.readouterr().out
     assert "abertos: 1" in saida
-    # O carimbo de tempo é metade do valor da linha: log de cron sem ele não diz até quando
-    # a sincronização esteve rodando.
-    assert saida.startswith(agora_utc().strftime("%Y-%m-%d"))
+    # O carimbo de tempo é metade do valor da linha: log de cron sem ele não diz até quando a
+    # sincronização esteve rodando. Confere-se o formato, não o valor — comparar com a data de
+    # agora faria o teste cair uma vez a cada muitos anos, na passagem exata da meia-noite, e
+    # teste que falha pelo motivo errado é pior que teste nenhum.
+    assert re.match(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}Z alertas — ", saida)
     assert db.scalars(select(Alerta)).all()
