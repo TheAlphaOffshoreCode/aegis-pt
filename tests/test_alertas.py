@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import sincronizar_alertas
 from app.models import Alerta, Area, ModeloPT, PermissaoTrabalho, Unidade, Usuario
 from app.models.enums import (
     EstadoPT,
@@ -430,3 +431,24 @@ def test_filtro_por_nivel_minimo(client: TestClient, db: Session, cenario: dict)
     ).json()
 
     assert corpo == []
+
+
+def test_o_comando_do_agendador_roda_uma_passagem(
+    db: Session, cenario: dict, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`python -m app.sincronizar_alertas` é a P41: o cron precisa de algo que ele saiba chamar.
+
+    O que este teste guarda é a fiação, não a regra — que já tem os testes acima. Fiação de
+    entrypoint quebra em silêncio: o import erra, o comando falha no servidor e o quadro de
+    alertas simplesmente para, sem nada na tela dizendo que parou.
+    """
+    criar_pt(db, cenario, estado=EstadoPT.EM_EXECUCAO, valida_ate=agora_utc() - timedelta(hours=1))
+
+    sincronizar_alertas.main()
+
+    saida = capsys.readouterr().out
+    assert "abertos: 1" in saida
+    # O carimbo de tempo é metade do valor da linha: log de cron sem ele não diz até quando
+    # a sincronização esteve rodando.
+    assert saida.startswith(agora_utc().strftime("%Y-%m-%d"))
+    assert db.scalars(select(Alerta)).all()

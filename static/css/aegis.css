@@ -229,7 +229,7 @@ dl {
   letter-spacing: 0.04em;
 }
 
-.chip.online { color: var(--verde); border-color: #1f4536; }
+.chip.online, .chip.integra { color: var(--verde); border-color: #1f4536; }
 .chip.falha, .chip.offline { color: var(--amber); border-color: #4a3714; }
 .chip.bloqueante { color: var(--vermelho); border-color: #4d2222; }
 .chip.atencao { color: var(--amber); border-color: #4a3714; }
@@ -415,6 +415,72 @@ button:focus-visible {
 
 .pendencia:last-child,
 .anexo:last-child { border-bottom: none; }
+
+/* --- trilha ---------------------------------------------------------------------------- */
+
+/* `<details>` nativo: recolher e expandir sem uma linha de JavaScript, com teclado e leitor de
+   tela já resolvidos. O `summary` tem altura de alvo de toque como qualquer outro controle. */
+details.painel > summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+  font-family: var(--fonte-titulo);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--texto-fraco);
+}
+
+details.painel[open] > summary {
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--regua);
+  padding-bottom: 8px;
+}
+
+details.painel > summary:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+.evento {
+  padding: 8px 0;
+  border-bottom: 1px dotted var(--regua);
+  font-size: 13px;
+}
+
+/* Respiro entre o veredito da cadeia e o primeiro elo: sem isto o chip encosta no evento e as
+   duas informações parecem uma coisa só. */
+.evento:first-of-type { margin-top: 10px; }
+
+.evento:last-child { border-bottom: none; }
+
+.evento .cabeca {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 9px;
+}
+
+.evento .momento,
+.evento .elo {
+  font-family: var(--fonte-dado);
+  font-size: 11px;
+  color: var(--texto-fraco);
+}
+
+/* O encadeamento é dado, e dado longo: quebra por caractere em vez de estourar a largura do
+   painel num tablet estreito. */
+.evento .elo {
+  margin-top: 3px;
+  word-break: break-all;
+}
+
+.evento .motivo {
+  margin-top: 3px;
+  color: var(--texto-fraco);
+}
 
 /* Não há bloco de `prefers-reduced-motion` porque não há animação nem transição nenhuma
    nesta folha. Um `animation: none !important` global aqui seria código morto que ainda por

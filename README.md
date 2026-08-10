@@ -13,7 +13,7 @@ audit trail that survives an incident investigation.
 [![CI](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml/badge.svg)](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Status: L13 of L13 — complete](https://img.shields.io/badge/status-L13_of_L13_complete-22c55e.svg)](#roadmap)
-[![Tests: 251](https://img.shields.io/badge/tests-251_passing-22c55e.svg)](#tests)
+[![Tests: 252](https://img.shields.io/badge/tests-252_passing-22c55e.svg)](#tests)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Offline capable](https://img.shields.io/badge/PWA-offline_reads-0ea5e9.svg)](#offshore-constraints)
 
@@ -143,11 +143,19 @@ size, which with many live keys means a full pass per request that frees nothing
 memory exhaustion for CPU exhaustion, which arrives sooner. Every one of the eight now has a
 regression test, each verified to fail when its fix is reverted.
 
+The trail has a screen of its own now, which matters more than it sounds: a hash chain nobody
+can look at is a promise, not evidence. Every permit carries a collapsed **Trilha de auditoria**
+panel that states the verdict in words — `cadeia íntegra · N elos`, or where exactly it stopped
+closing — and lists each link with its timestamp, actor role, state change and the two ends of
+its hash. It loads only when opened: history is not what anyone reads to decide something now,
+and it is the longest answer this screen can ask for over a shipboard link.
+
 **What is still missing:** ingestion of the paper archive with OCR (proposed as its own loop —
-what it actually needs is a bulk import flow, not an OCR call), one crontab line calling
-`POST /alertas/sincronizar` on a schedule, and two product decisions listed in `LOOP_STATE.md`.
-No penetration test has been run; this is a code and design audit by the person who wrote the
-code, and it is worth exactly what that is worth.
+what it actually needs is a bulk import flow, not an OCR call), two product decisions listed in
+`LOOP_STATE.md`, and screens for the dossier, the version history, compensating events and both
+AI routes — all of which work over the API and none of which a deck tablet can reach yet. No
+penetration test has been run; this is a code and design audit by the person who wrote the code,
+and it is worth exactly what that is worth.
 
 ## The problem
 
@@ -252,6 +260,26 @@ python -m uvicorn app.main:app --reload
 
 The PWA shell is at <http://127.0.0.1:8000>, the interactive API docs at `/docs`.
 
+Alerts are materialised by an explicit pass, never by a hidden daemon, so **something has to
+call it on a schedule** or the board quietly ages:
+
+```powershell
+python -m app.sincronizar_alertas
+```
+
+```cron
+# Linux, every five minutes
+*/5 * * * * cd /srv/aegis-pt && .venv/bin/python -m app.sincronizar_alertas >> /var/log/aegis-alertas.log 2>&1
+```
+
+The command runs against the database directly rather than calling `POST /alertas/sincronizar`,
+which stays for the button on the screen. The route is restricted to coordination and the OIM,
+so a scheduler would need a service credential stored on the server, rotated and eventually
+leaked — a machine account with write powers, invented to solve scheduling. The command is
+already inside the database and needs none. It is idempotent, so a missed run is recovered by
+the next one, and it fails loudly: an unhandled exception is a non-zero exit, which is what
+makes the scheduler complain instead of the board silently stopping.
+
 The seed creates one unit, three areas, five users, two pieces of equipment, two permit templates
 and four certifications — **one of them deliberately expired**, so the rule engine has a real case
 to block once L4 exists. Development accounts are matrículas `10001` to `10005`, password
@@ -265,7 +293,7 @@ way to create accounts with a known password.
 python -m pytest -q
 ```
 
-Two hundred and fifty-one tests, none of which reach the network — the AI loop is exercised
+Two hundred and fifty-two tests, none of which reach the network — the AI loop is exercised
 with an injected client, and the suite forces the API key empty so a key sitting in a
 developer's `.env` cannot make the tests call out and bill. The ones worth naming are those
 that fail loudly the day a guarantee quietly stops holding:
@@ -311,6 +339,9 @@ that fail loudly the day a guarantee quietly stops holding:
 - **areas are scoped like everything else**, and **deactivating a form model removes its work
   type from the issue screen** — a type with no model would be a dead end the screen offers
   anyway;
+- **the scheduled command actually runs a pass** — `python -m app.sincronizar_alertas` is what
+  the crontab line calls, and entrypoint wiring is precisely what breaks in silence: the import
+  goes wrong on the server, the board stops, and nothing on any screen says it stopped;
 - **a validation error reaches the screen with text in it** — `409` carries the rule engine's
   `mensagem`, `422` carries Pydantic's `msg`, and while the screen only knew the first the red
   box came up empty on something as ordinary as an inverted validity window.
@@ -354,7 +385,9 @@ A blocking pendency returns `409` with a structured list — `codigo`, `severida
 `campo`, `responsavel` — never a bare sentence, because the screen needs to know which field to
 mark and who is expected to resolve it. `422` still means the payload did not parse at all.
 
-Still scheduled: the closing security audit at L13.
+Every route above exists and is tested. Not all of them have a screen yet: the dossier, the
+version history, compensating events and the two AI routes are reachable over the API only,
+and that gap is listed in `LOOP_STATE.md` rather than left for someone to discover.
 
 The `/ai/*` routes answer `503` when no API key is configured. The AI degrades on its own; the
 rest of the application starts and works without it.

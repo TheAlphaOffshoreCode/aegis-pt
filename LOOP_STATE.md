@@ -21,6 +21,7 @@ Fonte de verdade para retomar o trabalho. Atualizado ao fim de cada loop.
 | L13 | Auditoria de segurança e fechamento | ✅ concluído | 2026-08-08 |
 | — | Verificação independente (P49, P50) | ✅ concluído | 2026-08-09 |
 | — | Tela de emissão e anexos | ✅ concluído | 2026-08-09 |
+| — | Trilha na tela e agendador de alertas (P41) | ✅ concluído | 2026-08-10 |
 
 ---
 
@@ -789,7 +790,7 @@ auditoria de código e desenho feita por quem escreveu o código, e vale o que i
 | P38 | Perigo e controle são duas listas de frases (`[{"descricao": ...}]`), sem vínculo entre si. Amarrar cada controle ao perigo que ele mitiga é o que uma tela de análise vai querer | L11/L12 |
 | ~~P39~~ | ~~`/ai/rascunho` sem limite~~ — mesmo limitador da P34 | resolvido no L13 |
 | P40 | **Ferramenta `indicadores` para a IA**, que fecharia a brecha de o modelo somar resultados de busca. Esbarra na regra 3 como implementada: resposta sem PT recuperada é descartada. Exige decidir o que conta como fonte | decisão do William |
-| P41 | **Nada agenda a sincronização de alertas.** `/alertas/sincronizar` é uma rota; sem um cron chamando, o painel envelhece em silêncio. Um deploy que esquecer a linha do crontab tem quadro parado, não errado | L12/L13 (operação) |
+| ~~P41~~ | ~~Nada agenda a sincronização de alertas~~ — `python -m app.sincronizar_alertas`, com as linhas de `cron` e `schtasks` no docstring e no README | resolvido em 10/08/2026 |
 | P42 | `sincronizar()` varre todas as PTs não encerradas e todas as certificações a cada chamada. Com acervo grande vira leitura completa por passagem — mesma família da P27 | quando o acervo crescer |
 | P43 | Alerta não tem reconhecimento humano: só `resolvido` automático pela condição sumir. Não dá para dizer "vi, estou tratando", e o `CANCELADO` do enum não tem caminho de código | quando a operação pedir |
 | P44 | Transição não é enfileirada offline, por decisão. Se a operação precisar assinar sem sinal, exige repensar onde o motor de regras roda — não é ajuste de fila | decisão de produto |
@@ -843,8 +844,8 @@ invioláveis têm teste que falha se alguma sair.
 O que sobra não é dívida escondida — está tudo na tabela acima e, com o motivo, na tabela de
 `docs/SECURITY.md`:
 
-- **Uma pendência operacional (P41):** falta uma linha de crontab chamando
-  `POST /alertas/sincronizar`. Sem ela o quadro de alertas envelhece em silêncio.
+- ~~**Uma pendência operacional (P41)**~~ — resolvida em 10/08/2026 com
+  `python -m app.sincronizar_alertas`, que é o que o agendador chama.
 - **Duas decisões de produto esperando o William:** a ferramenta `indicadores` para a IA (P40)
   e se o rascunho pode nascer incompleto (P37).
 - **Sete riscos aceitos por escrito**, cada um com o porquê.
@@ -961,3 +962,58 @@ nomeando o campo, e o tipo sem modelo foi barrado antes do envio.
 `GET /pts/{id}/trilha` (a trilha, que é a justificativa do produto), dossiê, versões, evento
 compensatório, `POST /ai/consulta` e `POST /ai/rascunho` — os dois loops de IA inteiros — e
 `POST /alertas/sincronizar` (o P41). Nada disso é novo; o que muda é que agora está escrito.
+
+---
+
+## Fora de loop — a trilha na tela e o agendador (10/08/2026)
+
+Duas coisas da lista acima, escolhidas por serem as que doíam: a trilha é a justificativa do
+produto e não aparecia em lugar nenhum, e o quadro de alertas dependia de uma linha de crontab
+que ninguém tinha escrito.
+
+### Entregue
+
+- **Bloco "Trilha de auditoria"** no detalhe da PT: o veredito da cadeia em palavras
+  (`cadeia íntegra · N elos`, ou onde ela deixou de fechar) e cada elo com momento, tipo de
+  evento, mudança de estado, perfil do ator, motivo e as duas pontas do hash.
+- **`python -m app.sincronizar_alertas`** — a P41. Uma passagem, idempotente, com as linhas de
+  `cron` e de `schtasks` no docstring do módulo e no README.
+
+### Decisões
+
+- **`<details>` nativo, fechado, que só busca ao abrir.** Recolher e expandir sem uma linha de
+  JavaScript, com teclado e leitor de tela já resolvidos pelo navegador. E a trilha não é o que
+  se lê para decidir agora: é a resposta mais longa que esta tela pede, e cobrá-la em toda
+  abertura de PT sairia caro no enlace de bordo.
+- **O tipo de evento vai cru, como o servidor gravou.** O catálogo de tipos é aberto por
+  desenho (foi assim que `pt.criada_por_ia` entrou sem bump de `VERSAO_PAYLOAD`). Traduzir os
+  nomes na tela criaria uma segunda cópia dele, livre para divergir — e um tipo novo apareceria
+  em branco em vez de aparecer pelo nome.
+- **O veredito é escrito, não só colorido.** Mesma regra do chip de nível do L12: cor sozinha
+  não serve para quem não distingue as cores nem para quem está no sol do convés.
+- **`carregada` só é marcada no sucesso.** A trilha é append-only, então o que já está na tela
+  continua valendo; mas uma falha de rede tem de poder ser repetida fechando e reabrindo.
+- **O comando do agendador vai ao banco, não à rota.** `POST /alertas/sincronizar` continua
+  servindo ao botão da tela, e é restrita a coordenação e OIM: um cron chamando-a precisaria de
+  uma credencial de serviço guardada no servidor, com rotação e risco de vazar — uma conta de
+  máquina com poder de escrita, inventada para resolver agendamento. O comando já está do lado
+  de dentro do banco e não inventa credencial nenhuma. Escopo não é problema: `sincronizar`
+  ignora o escopo de quem chama desde o L11, de propósito.
+
+### Aceite
+
+**252 testes passando** (1 novo). O teste do entrypoint foi provado nos dois sentidos:
+trocando a chamada de `sincronizar(db)` por um resultado vazio, ele cai; restaurado, passa.
+
+Contra o banco de desenvolvimento, o comando rodou duas vezes seguidas — a primeira abriu 1
+alerta, a segunda não mexeu em nada, que é a idempotência prometida no L11 valendo pelo caminho
+novo.
+
+A trilha foi conferida no Chrome dirigido por CDP, em 390 px: login pela tela, detalhe da
+`PT-2026-0001`, clique de verdade no `summary` e os dois elos na tela — `pt.criada` e
+`pt.transicao.validacao`, com `início → 59b6b082560e` e `59b6b082560e → b73a79a08425`, o
+segundo abrindo com o que o primeiro fechou. Nenhum aviso de erro na tela e nada no console.
+
+### O que continua sem tela
+
+Dossiê, versões, evento compensatório e os dois loops de IA. A trilha saiu da lista.

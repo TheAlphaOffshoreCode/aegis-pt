@@ -556,7 +556,93 @@ async function telaDetalhe(id) {
 
   // --- transições: exigem rede ---
   secao.append(await blocoDeTransicoes(pt));
+
+  // --- trilha: o histórico, fechado até alguém pedir ---
+  secao.append(blocoDaTrilha(pt));
   return secao;
+}
+
+/** A trilha da PT: o veredito da cadeia e cada elo, na ordem em que foram selados.
+ *
+ * Vive num `<details>` fechado e só busca quando alguém abre. Duas razões: é histórico, não é
+ * o que se lê para decidir agora, e a trilha de uma PT antiga é a resposta mais longa que esta
+ * tela pede — carregá-la em toda abertura de PT sairia caro no enlace de bordo.
+ *
+ * O veredito de integridade vem escrito, não só colorido: quem lê no sol do convés precisa da
+ * palavra. E o que a cadeia não fecha aparece como erro, com o elo e o motivo — uma trilha que
+ * não diz onde quebrou não serve para a investigação que a pede.
+ */
+function blocoDaTrilha(pt) {
+  const bloco = el("details", { class: "painel" }, [
+    el("summary", { texto: "Trilha de auditoria" }),
+  ]);
+  const destino = el("div");
+  bloco.append(destino);
+
+  // O `toggle` dispara também ao fechar, daí a guarda do `open`. `carregada` só é marcada no
+  // sucesso: a trilha é append-only, então o que já está na tela continua valendo, mas uma
+  // falha de rede tem de poder ser tentada de novo fechando e reabrindo.
+  let carregada = false;
+  bloco.addEventListener("toggle", async () => {
+    if (!bloco.open || carregada) return;
+    destino.replaceChildren(el("p", { class: "vazio", texto: "Carregando…" }));
+
+    try {
+      const trilha = await api(`/pts/${pt.id}/trilha`);
+      const partes = [
+        trilha.__doCache
+          ? aviso("Cópia local: elos selados depois disto podem não estar aqui.", "", "Dado local")
+          : null,
+        trilha.integra
+          ? el("span", {
+              class: "chip integra",
+              texto: `cadeia íntegra · ${trilha.eventos.length} elos`,
+            })
+          : aviso(
+              trilha.quebras
+                .map((q) => `elo ${q.posicao} (evento ${q.evento_id}): ${q.motivo}`)
+                .join(" · "),
+              "erro",
+              "Cadeia quebrada"
+            ),
+        ...trilha.eventos.map((evento) =>
+          el("div", { class: "evento" }, [
+            el("div", { class: "cabeca" }, [
+              el("span", { class: "momento", texto: instante(evento.ocorrido_em) }),
+              // O tipo vai cru, como o servidor o gravou. O catálogo de tipos é aberto por
+              // desenho — traduzi-lo aqui criaria uma segunda cópia dele, livre para divergir,
+              // e um evento novo apareceria em branco na tela em vez de aparecer pelo nome.
+              el("span", { class: "chip", texto: evento.tipo_evento }),
+              evento.estado_destino
+                ? el("span", { texto: `${evento.estado_origem || "—"} → ${evento.estado_destino}` })
+                : null,
+              el("span", { class: "momento", texto: evento.perfil_ator || "sistema" }),
+              evento.evento_compensado_id
+                ? el("span", {
+                    class: "chip atencao",
+                    texto: `corrige o evento ${evento.evento_compensado_id}`,
+                  })
+                : null,
+            ]),
+            evento.motivo ? el("div", { class: "motivo", texto: evento.motivo }) : null,
+            // Os doze primeiros caracteres de cada ponta bastam para acompanhar o encadeamento
+            // na tela: o elo seguinte abre com o que este fechou. A conferência de verdade é do
+            // servidor, e é ela que o veredito acima está reportando.
+            el("div", {
+              class: "elo",
+              texto: `${(evento.hash_anterior || "início").slice(0, 12)} → ${evento.hash_evento.slice(0, 12)}`,
+            }),
+          ])
+        ),
+      ];
+      destino.replaceChildren(...partes.filter(Boolean));
+      carregada = true;
+    } catch (erro) {
+      destino.replaceChildren(aviso(erro.message, "erro", "Trilha indisponível"));
+    }
+  });
+
+  return bloco;
 }
 
 /** Baixa um anexo e entrega ao navegador.
