@@ -13,7 +13,11 @@
  * duplicata que ninguém explica depois.
  */
 
-const VERSAO = "aegis-v2";
+// Substituída pelo servidor em `GET /sw.js` por uma impressão digital do shell — ver
+// `_versao_do_shell` em `app/main.py`. Escrita à mão, ela dependia de alguém lembrar de
+// trocá-la a cada correção, e o preço de esquecer era um tablet com `index.html` novo e
+// `app.js` velho: uma aba na tela que a aplicação carregada não sabe abrir.
+const VERSAO = "aegis-dev";
 const SHELL = `${VERSAO}-shell`;
 const DADOS = `${VERSAO}-dados`;
 
@@ -40,7 +44,16 @@ const CACHEAVEL = [/^\/pts(\/|$|\?)/, /^\/indicadores/, /^\/alertas/];
 
 self.addEventListener("install", (evento) => {
   evento.waitUntil(
-    caches.open(SHELL).then((cache) => cache.addAll(ARQUIVOS_DO_SHELL)).then(() => self.skipWaiting())
+    caches
+      .open(SHELL)
+      // `cache: "reload"` obriga cada arquivo a vir da rede. Sem isso o `addAll` pode ser
+      // atendido pelo cache HTTP do próprio navegador, e a instalação de uma versão nova
+      // guardaria os arquivos velhos — a atualização que não chega, agora com um passo a mais
+      // para descobrir por quê.
+      .then((cache) =>
+        cache.addAll(ARQUIVOS_DO_SHELL.map((caminho) => new Request(caminho, { cache: "reload" })))
+      )
+      .then(() => self.skipWaiting())
   );
 });
 

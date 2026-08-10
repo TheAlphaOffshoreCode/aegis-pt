@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from app import main
 from app.models.pessoa import Usuario
 from app.models.tipos import agora_utc
 
@@ -35,6 +36,39 @@ def test_o_service_worker_vem_da_raiz(client: TestClient) -> None:
     assert resposta.status_code == 200
     assert "javascript" in resposta.headers["content-type"]
     assert resposta.headers["cache-control"] == "no-cache"
+
+
+def test_o_worker_sai_com_a_versao_do_shell_embutida(client: TestClient) -> None:
+    """O `sw.js` em disco traz um valor de espera; quem serve troca pela impressão digital.
+
+    Se a substituição deixar de acontecer, o worker passa a anunciar sempre a mesma versão, o
+    navegador nunca o vê mudar, e a atualização para de chegar ao tablet sem nada quebrar por
+    perto — exatamente o tipo de falha silenciosa que o cache-first cria.
+    """
+    corpo = client.get("/sw.js").text
+
+    assert 'const VERSAO = "aegis-dev"' not in corpo
+    assert re.search(r'const VERSAO = "aegis-[0-9a-f]{12}"', corpo)
+
+
+def test_a_versao_do_shell_muda_quando_o_shell_muda(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """É a garantia inteira: conteúdo diferente, versão diferente, cache refeito.
+
+    O `sw.js` fica fora do resumo de propósito — ele carrega a versão, e incluí-lo faria o
+    valor depender de si mesmo.
+    """
+    (tmp_path / "app.js").write_text("primeira versão", encoding="utf-8")
+    (tmp_path / "sw.js").write_text("const VERSAO = 'x'", encoding="utf-8")
+    monkeypatch.setattr(main, "STATIC_DIR", tmp_path)
+
+    antes = main._versao_do_shell()
+    (tmp_path / "sw.js").write_text("const VERSAO = 'y'", encoding="utf-8")
+    assert main._versao_do_shell() == antes
+
+    (tmp_path / "app.js").write_text("segunda versão", encoding="utf-8")
+    assert main._versao_do_shell() != antes
 
 
 def test_o_manifesto_declara_o_minimo_para_instalar(client: TestClient) -> None:

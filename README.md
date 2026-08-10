@@ -13,7 +13,7 @@ audit trail that survives an incident investigation.
 [![CI](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml/badge.svg)](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Status: L13 of L13 — complete](https://img.shields.io/badge/status-L13_of_L13_complete-22c55e.svg)](#roadmap)
-[![Tests: 252](https://img.shields.io/badge/tests-252_passing-22c55e.svg)](#tests)
+[![Tests: 254](https://img.shields.io/badge/tests-254_passing-22c55e.svg)](#tests)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Offline capable](https://img.shields.io/badge/PWA-offline_reads-0ea5e9.svg)](#offshore-constraints)
 
@@ -293,7 +293,7 @@ way to create accounts with a known password.
 python -m pytest -q
 ```
 
-Two hundred and fifty-two tests, none of which reach the network — the AI loop is exercised
+Two hundred and fifty-four tests, none of which reach the network — the AI loop is exercised
 with an injected client, and the suite forces the API key empty so a key sitting in a
 developer's `.env` cannot make the tests call out and bill. The ones worth naming are those
 that fail loudly the day a guarantee quietly stops holding:
@@ -339,6 +339,9 @@ that fail loudly the day a guarantee quietly stops holding:
 - **areas are scoped like everything else**, and **deactivating a form model removes its work
   type from the issue screen** — a type with no model would be a dead end the screen offers
   anyway;
+- **the service worker's version follows the shell's content** — the version is a digest of the
+  static files rather than a string someone remembers to bump, so a changed file cannot reach a
+  tablet as a new `index.html` sitting next to a cached old `app.js`;
 - **the scheduled command actually runs a pass** — `python -m app.sincronizar_alertas` is what
   the crontab line calls, and entrypoint wiring is precisely what breaks in silence: the import
   goes wrong on the server, the board stops, and nothing on any screen says it stopped;

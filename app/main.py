@@ -1,8 +1,10 @@
 """Ponto de entrada da API do AEGIS PT."""
 
+import hashlib
+import re
 from pathlib import Path
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -89,16 +91,50 @@ def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
+def _versao_do_shell() -> str:
+    """Impressão digital do conteúdo estático servido ao navegador.
+
+    O `sw.js` sai daqui com esta versão embutida, e é ela que decide quando o navegador troca
+    de worker e refaz o cache. Derivá-la do conteúdo, em vez de escrevê-la à mão, é o que
+    impede o estado que já apareceu na prática: **um shell misturado** — `index.html` novo com
+    `app.js` velho, uma aba que existe e uma tela que ela não sabe abrir. Cada arquivo é
+    revalidado por conta própria, então nada garante que os dois cheguem juntos ao tablet a
+    menos que a versão do worker mude quando qualquer um deles mudar.
+
+    O próprio `sw.js` fica de fora do resumo: ele contém a versão, e incluí-lo faria o valor
+    depender de si mesmo.
+    """
+    # ponytail: relê o estático a cada requisição do worker (~70 KB, quase tudo fonte). Se um
+    # dia isso pesar, a chave de um cache é o par (mtime, tamanho) de cada arquivo.
+    resumo = hashlib.sha256()
+    for arquivo in sorted(STATIC_DIR.rglob("*")):
+        if arquivo.is_file() and arquivo.name != "sw.js":
+            resumo.update(arquivo.read_bytes())
+    return resumo.hexdigest()[:12]
+
+
 @app.get("/sw.js", include_in_schema=False)
-def service_worker() -> FileResponse:
-    """O service worker precisa ser servido da raiz.
+def service_worker() -> Response:
+    """O service worker precisa ser servido da raiz, e com a versão do shell embutida.
 
     O escopo de um service worker é a pasta de onde ele veio: em `/static/sw.js` ele só
     controlaria `/static/`, e não a aplicação. Servi-lo aqui dá a ele o escopo `/` sem
     depender de cabeçalho `Service-Worker-Allowed`.
     """
-    return FileResponse(
-        STATIC_DIR / "sw.js",
+    fonte = (STATIC_DIR / "sw.js").read_text(encoding="utf-8")
+    corpo, trocas = re.subn(
+        r'const VERSAO = "[^"]+"',
+        f'const VERSAO = "aegis-{_versao_do_shell()}"',
+        fonte,
+        count=1,
+    )
+    if trocas != 1:
+        # Falha alto: sem a substituição o worker serviria uma versão fixa para sempre, e a
+        # atualização pararia de chegar sem nada quebrar por perto.
+        raise RuntimeError("Não encontrei a declaração de VERSAO em static/sw.js")
+
+    return Response(
+        content=corpo,
         media_type="application/javascript",
         # Sem isto o navegador pode servir um worker velho do próprio cache HTTP e a
         # atualização do aplicativo nunca chega ao tablet.

@@ -22,6 +22,7 @@ Fonte de verdade para retomar o trabalho. Atualizado ao fim de cada loop.
 | — | Verificação independente (P49, P50) | ✅ concluído | 2026-08-09 |
 | — | Tela de emissão e anexos | ✅ concluído | 2026-08-09 |
 | — | Trilha na tela e agendador de alertas (P41) | ✅ concluído | 2026-08-10 |
+| — | Versão do service worker derivada do shell | ✅ concluído | 2026-08-10 |
 
 ---
 
@@ -1017,3 +1018,42 @@ segundo abrindo com o que o primeiro fechou. Nenhum aviso de erro na tela e nada
 ### O que continua sem tela
 
 Dossiê, versões, evento compensatório e os dois loops de IA. A trilha saiu da lista.
+
+---
+
+## Fora de loop — o shell misturado (10/08/2026)
+
+Aberta a aplicação para ver a trilha, **a aba EMITIR não fazia nada**. A tela estava certa: num
+Chrome limpo ela abre. O que estava errado era o que o navegador tinha guardado — `index.html`
+novo (com a aba) e `app.js` velho (sem a rota `nova`), e o roteador antigo cai no `else` final e
+redesenha a lista. Clicar parecia não fazer nada porque, literalmente, a mesma tela voltava.
+
+**Como o shell se mistura.** O cache-first do L12 revalida em segundo plano, e revalida *por
+arquivo*: quem abre e fecha rápido atualiza alguns e deixa outros para trás. Na visita seguinte o
+cache tem duas gerações ao mesmo tempo, e a `VERSAO` — escrita à mão desde o L12 — não muda
+sozinha para dizer que aquilo virou outro aplicativo. Já estava escrito no `CLAUDE.md` que
+depender de lembrar de trocá-la era depender de memória humana para uma falha silenciosa; foi
+essa a conta chegando.
+
+### Entregue
+
+- **`GET /sw.js` injeta a versão**, calculada como resumo SHA-256 do conteúdo de `static/`
+  (menos o próprio `sw.js`, que carrega o valor e não pode depender de si mesmo). Conteúdo
+  diferente, versão diferente, cache refeito inteiro — e o `activate`, que já apagava caches de
+  outra versão, passa a ter o que apagar.
+- **`install` busca com `cache: "reload"`.** Sem isso o `addAll` pode ser atendido pelo cache
+  HTTP do próprio navegador, e a instalação da versão nova guardaria os arquivos velhos.
+
+### Aceite
+
+**254 testes** (2 novos): a rota entrega uma versão substituída, e a impressão digital muda
+quando um arquivo do shell muda e **não** muda quando só o `sw.js` muda.
+
+Provado num Chrome com perfil persistente, que é o que representa o tablet: instalado o
+aplicativo (`aegis-982a5275b4cd`), acrescentei um marcador ao `app.js`, e na carga seguinte o
+navegador trocou de worker sozinho (`aegis-1ae553f13614`), refez o cache e passou a servir o
+arquivo novo — com o cache antigo apagado, sem sobrar mistura. Restaurado o `app.js` por cópia, a
+versão voltou exatamente ao valor anterior, que é a impressão digital fazendo o que promete.
+
+**Para quem já tem o aplicativo aberto**, um `Ctrl+Shift+R` resolve na hora; sem ele são duas
+recargas — a primeira troca o worker, a segunda carrega a página com o shell novo.
