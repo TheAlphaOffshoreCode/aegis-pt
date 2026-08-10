@@ -1057,3 +1057,19 @@ versão voltou exatamente ao valor anterior, que é a impressão digital fazendo
 
 **Para quem já tem o aplicativo aberto**, um `Ctrl+Shift+R` resolve na hora; sem ele são duas
 recargas — a primeira troca o worker, a segunda carrega a página com o shell novo.
+
+### A segunda causa, encontrada porque o sintoma voltou
+
+Com o worker corrigido, a aba continuou sem responder. O que faltava não passava pelo service
+worker: **o shell não mandava `Cache-Control` nenhum.** Sem a diretiva, o Starlette envia só
+`ETag` e `Last-Modified`, e vale a heurística do navegador — ele reusa o arquivo sem perguntar
+por uma fração do tempo desde a última modificação. Como cada arquivo tem a sua própria idade,
+saem do frescor em momentos diferentes, e o `index.html` novo volta a encontrar o `app.js`
+velho. A mesma mistura, por um caminho onde o worker nunca é consultado.
+
+`/`, `/static/*` e `/sw.js` passam a sair com `no-cache`, que não proíbe guardar: obriga a
+perguntar. Com o `ETag` que já saía, a confirmação é um `304` sem corpo.
+
+**259 testes.** Cinco novos, e o que mais importa é o do `304`: é ele que responde em toda
+recarga, e uma diretiva que só aparecesse no `200` deixaria justamente a resposta do dia a dia
+sem instrução nenhuma. Todos provados nos dois sentidos — desligando a sobrescrita, caem.

@@ -82,14 +82,35 @@ app.include_router(ai.router)
 app.include_router(indicadores.router)
 app.include_router(organizacao.router)
 
+# O navegador precisa **perguntar** antes de reusar um arquivo do shell. Sem `Cache-Control`, o
+# Starlette manda só `ETag` e `Last-Modified`, e aí vale a heurística: o Chrome reusa um arquivo
+# sem revalidar por uma fração do tempo desde a última modificação. Como cada arquivo tem a sua
+# própria idade, eles saem do frescor em momentos diferentes — e é assim que um `index.html`
+# novo acaba na tela ao lado de um `app.js` velho, sem service worker nenhum envolvido.
+#
+# `no-cache` não proíbe guardar: obriga a revalidar. Com o `ETag` que já sai, a confirmação é um
+# `304` sem corpo — barato o suficiente para um enlace de bordo, e o service worker continua
+# servindo o que ele guardou quando não há rede.
+REVALIDAR = {"Cache-Control": "no-cache"}
+
+
+class EstaticoRevalidado(StaticFiles):
+    """`StaticFiles` que manda o navegador conferir antes de reusar."""
+
+    def file_response(self, *args: object, **kwargs: object) -> Response:
+        resposta = super().file_response(*args, **kwargs)
+        resposta.headers.update(REVALIDAR)
+        return resposta
+
+
 # Montado em /static, e não em "/", para que nenhum router incluído depois seja engolido.
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount("/static", EstaticoRevalidado(directory=STATIC_DIR), name="static")
 
 
 @app.get("/", include_in_schema=False)
 def index() -> FileResponse:
     """Entrega o shell do PWA."""
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(STATIC_DIR / "index.html", headers=REVALIDAR)
 
 
 def _marca_do_shell() -> tuple[tuple[str, int, int], ...]:

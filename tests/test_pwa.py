@@ -38,6 +38,39 @@ def test_o_service_worker_vem_da_raiz(client: TestClient) -> None:
     assert resposta.headers["cache-control"] == "no-cache"
 
 
+@pytest.mark.parametrize("caminho", ["/", "/static/js/app.js", "/static/css/aegis.css", "/sw.js"])
+def test_o_shell_e_sempre_revalidado(client: TestClient, caminho: str) -> None:
+    """Sem `Cache-Control`, o navegador reusa pela heurística e cada arquivo vence na sua hora.
+
+    É o segundo caminho pelo qual o shell chega misturado, e este não passa pelo service worker:
+    basta o `index.html` sair do frescor antes do `app.js` para a tela ganhar uma aba que a
+    aplicação carregada não sabe abrir.
+    """
+    resposta = client.get(caminho)
+
+    assert resposta.headers["cache-control"] == "no-cache"
+    # `no-cache` sem validador seria download completo a cada carga: é o `ETag` que faz a
+    # revalidação custar um `304`.
+    assert "etag" in resposta.headers or caminho == "/sw.js"
+
+
+def test_a_revalidacao_tambem_carrega_a_diretiva(client: TestClient) -> None:
+    """O `304` é o caminho quente — é ele que responde em toda recarga.
+
+    Se a diretiva viesse só no `200`, a resposta que o navegador realmente recebe no dia a dia
+    ficaria sem instrução nenhuma e a heurística voltaria a valer, com o mesmo desfecho de
+    antes. O `Starlette` monta o `304` dentro do mesmo `file_response`, e é disso que este teste
+    depende: se um dia deixar de montar, é aqui que se descobre.
+    """
+    primeira = client.get("/static/js/app.js")
+    segunda = client.get(
+        "/static/js/app.js", headers={"If-None-Match": primeira.headers["etag"]}
+    )
+
+    assert segunda.status_code == 304
+    assert segunda.headers["cache-control"] == "no-cache"
+
+
 def test_o_worker_sai_com_a_versao_do_shell_embutida(client: TestClient) -> None:
     """O `sw.js` em disco traz um valor de espera; quem serve troca pela impressão digital.
 
