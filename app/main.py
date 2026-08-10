@@ -2,6 +2,7 @@
 
 import hashlib
 import re
+import stat
 from functools import lru_cache
 from pathlib import Path
 
@@ -119,11 +120,14 @@ def _marca_do_shell() -> tuple[tuple[str, int, int], ...]:
     O próprio `sw.js` fica de fora: ele carrega a versão, e incluí-lo faria o valor depender de
     si mesmo.
     """
-    return tuple(
-        (str(arquivo), arquivo.stat().st_size, arquivo.stat().st_mtime_ns)
-        for arquivo in sorted(STATIC_DIR.rglob("*"))
-        if arquivo.is_file() and arquivo.name != "sw.js"
-    )
+    marca = []
+    for arquivo in sorted(STATIC_DIR.rglob("*")):
+        if arquivo.name == "sw.js":
+            continue
+        dados = arquivo.stat()
+        if stat.S_ISREG(dados.st_mode):
+            marca.append((str(arquivo), dados.st_size, dados.st_mtime_ns))
+    return tuple(marca)
 
 
 @lru_cache(maxsize=4)
@@ -183,5 +187,5 @@ def service_worker() -> Response:
         media_type="application/javascript",
         # Sem isto o navegador pode servir um worker velho do próprio cache HTTP e a
         # atualização do aplicativo nunca chega ao tablet.
-        headers={"Cache-Control": "no-cache"},
+        headers=REVALIDAR,
     )
