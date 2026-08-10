@@ -2,6 +2,7 @@
 
 import hashlib
 import re
+from functools import lru_cache
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response, status
@@ -91,6 +92,28 @@ def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
+def _marca_do_shell() -> tuple[tuple[str, int, int], ...]:
+    """Caminho, tamanho e mtime de cada arquivo estático — barato o bastante por requisição.
+
+    O próprio `sw.js` fica de fora: ele carrega a versão, e incluí-lo faria o valor depender de
+    si mesmo.
+    """
+    return tuple(
+        (str(arquivo), arquivo.stat().st_size, arquivo.stat().st_mtime_ns)
+        for arquivo in sorted(STATIC_DIR.rglob("*"))
+        if arquivo.is_file() and arquivo.name != "sw.js"
+    )
+
+
+@lru_cache(maxsize=4)
+def _resumo_do_shell(marca: tuple[tuple[str, int, int], ...]) -> str:
+    """Lê e resume o shell. Só roda quando a marca muda — a leitura é o caro daqui."""
+    resumo = hashlib.sha256()
+    for caminho, _, _ in marca:
+        resumo.update(Path(caminho).read_bytes())
+    return resumo.hexdigest()[:12]
+
+
 def _versao_do_shell() -> str:
     """Impressão digital do conteúdo estático servido ao navegador.
 
@@ -101,16 +124,17 @@ def _versao_do_shell() -> str:
     revalidado por conta própria, então nada garante que os dois cheguem juntos ao tablet a
     menos que a versão do worker mude quando qualquer um deles mudar.
 
-    O próprio `sw.js` fica de fora do resumo: ele contém a versão, e incluí-lo faria o valor
-    depender de si mesmo.
+    A leitura fica atrás de um cache com chave em `(caminho, tamanho, mtime)` porque `/sw.js`
+    é rota pública e sem limite: resumir ~70 KB por chamada daria a qualquer um, de graça,
+    leitura de disco e CPU proporcionais ao número de requisições. Com o cache o caminho
+    quente é um `stat` por arquivo, e a versão continua acompanhando o conteúdo — o processo
+    que serve é o mesmo que enxerga o arquivo mudar.
+
+    O compromisso é o mesmo de um `ETag` fraco: uma edição que preserve tamanho **e** mtime
+    passa despercebida. Nenhum jeito normal de publicar faz isso — copiar, extrair ou dar
+    `git checkout` mexe no mtime.
     """
-    # ponytail: relê o estático a cada requisição do worker (~70 KB, quase tudo fonte). Se um
-    # dia isso pesar, a chave de um cache é o par (mtime, tamanho) de cada arquivo.
-    resumo = hashlib.sha256()
-    for arquivo in sorted(STATIC_DIR.rglob("*")):
-        if arquivo.is_file() and arquivo.name != "sw.js":
-            resumo.update(arquivo.read_bytes())
-    return resumo.hexdigest()[:12]
+    return _resumo_do_shell(_marca_do_shell())
 
 
 @app.get("/sw.js", include_in_schema=False)

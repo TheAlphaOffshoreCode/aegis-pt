@@ -64,9 +64,13 @@ def test_a_versao_do_shell_muda_quando_o_shell_muda(
     monkeypatch.setattr(main, "STATIC_DIR", tmp_path)
 
     antes = main._versao_do_shell()
+    assert main._versao_do_shell() == antes, "shell parado, versão parada"
+
     (tmp_path / "sw.js").write_text("const VERSAO = 'y'", encoding="utf-8")
     assert main._versao_do_shell() == antes
 
+    # Sem limpar o cache de propósito: se a leitura estivesse presa nele, a mudança abaixo
+    # passaria despercebida — que é a única forma de esta função enganar quem depende dela.
     (tmp_path / "app.js").write_text("segunda versão", encoding="utf-8")
     assert main._versao_do_shell() != antes
 
