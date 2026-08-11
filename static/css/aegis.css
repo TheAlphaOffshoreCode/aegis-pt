@@ -353,6 +353,22 @@ button.secundario {
   border: 1px solid var(--cyan);
 }
 
+/* Ação rara dentro de um bloco feito para ler. Repetida em cada elo, a variante `secundario`
+   dominava a trilha inteira — seis botões em cyan competindo com a evidência. O alvo de toque
+   continua nos 44 px; o que sai é o peso visual, não a disponibilidade. */
+button.discreto {
+  background: transparent;
+  color: var(--texto-fraco);
+  border: 1px dashed var(--regua);
+  font-size: 12px;
+  padding: 6px 12px;
+}
+
+button.discreto:hover {
+  color: var(--cyan);
+  border-color: var(--cyan);
+}
+
 button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
@@ -551,4 +567,55 @@ a.chip:hover { border-color: var(--cyan); }
 a.chip:focus-visible {
   outline: 2px solid var(--cyan);
   outline-offset: 2px;
+}
+
+/* --- versões e correção da trilha ------------------------------------------------------ */
+
+.diff {
+  margin-top: 6px;
+}
+
+/* Campo em cima, valores embaixo. Quatro colunas numa linha só cabem no monitor e não no
+   tablet, e o que importa aqui é ler o par inteiro sem rolar de lado. */
+.linha-diff {
+  padding: 6px 0;
+  border-top: 1px dotted var(--regua);
+  font-family: var(--fonte-dado);
+  font-size: 12px;
+  /* `perigos` e `respostas` são estruturas, e viram JSON de uma linha só. */
+  overflow-wrap: anywhere;
+}
+
+.linha-diff .campo {
+  display: block;
+  color: var(--texto-fraco);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 3px;
+}
+
+/* O que saiu vem riscado, e não só apagado: a diferença entre os dois valores não pode
+   depender de distinguir dois tons de cinza no sol do convés. */
+.linha-diff .de {
+  color: var(--texto-fraco);
+  text-decoration: line-through;
+}
+
+.linha-diff .seta {
+  color: var(--texto-fraco);
+  margin: 0 5px;
+}
+
+.linha-diff .para {
+  color: var(--texto);
+}
+
+/* A correção é recuada e marcada em âmbar: é escrita permanente na trilha, não um campo
+   qualquer do formulário, e deve parecer diferente de um. */
+.compensacao {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid #4a3714;
+  border-radius: var(--raio);
+  background: var(--void);
 }

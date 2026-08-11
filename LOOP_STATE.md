@@ -1251,3 +1251,79 @@ desenvolvimento:
 ### O que continua sem tela
 
 Dossiê, versões e evento compensatório.
+
+---
+
+## Fora de loop — dossiê, versões e correção da trilha (11/08/2026)
+
+As três últimas rotas sem tela. Com isto **nenhuma rota da API depende de `curl`**.
+
+### Entregue
+
+- **Histórico de versões** — `<details>` no detalhe da PT, com o diff campo a campo de cada
+  revisão. `versao` só sobe ao sair do rascunho, então cada linha aqui é uma revisão que
+  alguém assinou, não uma tecla digitada.
+- **Dossiê** — botão de download, não mais uma tela.
+- **Correção da trilha** — em cada elo, para coordenador, OIM e admin.
+- **`API.usuario` finalmente preenchido** a partir de `/auth/eu`. O campo existia desde o L12 e
+  nunca tinha sido carregado.
+
+### Decisões
+
+- **O dossiê é download, e não outra tela.** A tela já mostra as partes; o que o dossiê
+  acrescenta é ser **um artefato** — sai daqui e é lido em outro lugar, meses depois, por quem
+  não tem acesso a esta aplicação. Ele sai com `trilha_integra` junto, e a tela diz qual foi o
+  veredito **no momento da exportação**.
+- **Corrigir aparece só para quem o servidor aceitaria.** Não é controle de acesso — a regra
+  vive em `exigir_perfis(COORDENADOR, OIM)` na rota e já tinha teste (403 para requisitante).
+  É a tela não oferecer o que vai ser recusado. Offline o perfil fica desconhecido e a ação
+  some, o que é o certo: compensar exige rede.
+- **Compensação de compensação não ganha botão.** O servidor já recusa
+  (`compensacao_de_compensacao`); a tela não oferece, porque corrigir a correção encadeia
+  desculpa em cima de desculpa e a trilha deixa de contar uma história legível.
+- **A trilha inteira é repintada depois de corrigir**, e não emendada no fim. O veredito da
+  cadeia é calculado sobre a trilha toda: emendar deixaria na tela um veredito falando de uma
+  trilha que não é mais a do banco.
+- **`versao` continua aparecendo no diff**, embora seja sempre redundante com o número da
+  versão logo acima. Filtrar campo de um artefato de auditoria na tela é precedente pior que
+  uma linha repetida — a mesma razão pela qual o tipo de evento vai cru.
+- **Valor estruturado vira JSON na tela.** `perigos` e `respostas` são objetos, e
+  `[object Object]` na tela de uma investigação é pior que verboso.
+
+### Um defeito de peso visual, achado no render
+
+Reusei `button.secundario` no "Corrigir" — a escolha certa pelo ladder, já que a variante
+existia. Errada na tela: repetido em cada elo, **seis botões em cyan dominavam um bloco feito
+para ler**, competindo com a evidência. Nasceu `button.discreto`: borda tracejada, texto fraco,
+alvo de toque intacto nos 44 px. O que saiu foi o peso, não a disponibilidade.
+
+Vale como regra: **reusar o componente existente é o padrão, mas densidade muda o julgamento** —
+o mesmo botão que está certo uma vez por tela está errado seis vezes dentro de um bloco de
+leitura.
+
+### Aceite
+
+**272 testes** (nenhum novo: os endpoints já tinham cobertura, inclusive o `403` da compensação
+para requisitante, e o teste de contrato de frontend de ontem já cobre as três rotas novas que a
+tela passou a chamar).
+
+Conferido num Chrome por CDP a 390 px, contra o banco de desenvolvimento, **nos dois perfis**:
+
+- **Requisitante (10001):** zero botões "Corrigir"; dossiê baixado em disco
+  (`dossie-PT-2026-0002.json`, 9 chaves, `trilha_integra=true`, 6 eventos, 4 assinaturas).
+- **Coordenadora (10005):** 6 botões; correção sem motivo **recusada**; correção registrada →
+  a trilha passou de 6 para 7 elos, o chip "corrige o evento 1" apareceu e o veredito continuou
+  **cadeia íntegra · 7 elos**. É a regra 4 na tela: nada apagado, e a cadeia ainda fecha.
+- Para ver um diff de verdade, a `PT-2026-0001` percorreu o caminho real —
+  `VALIDACAO → REJEITADA → RASCUNHO`, correção, e de volta: nasceu a versão 2 com
+  `descricao` e `perigos` mudados. A primeira versão diz "primeiro retrato do documento" em vez
+  de mostrar bloco vazio.
+- `document.scrollWidth` = 390 no viewport de 390: nenhum bloco de dado estoura a largura.
+
+### O que continua sem prova
+
+**Nada roda contra PostgreSQL.** O Docker Desktop está instalado nesta máquina mas o **WSL
+não**, e sem ele o daemon não sobe — instalar exige reinício, que é decisão do William. Fica
+como a maior lacuna do projeto: a P49 (bifurcação da cadeia sob concorrência) é um defeito que
+o SQLite **esconde** pela trava global de escrita, e a correção dela nunca foi exercitada no
+banco onde o problema existe.

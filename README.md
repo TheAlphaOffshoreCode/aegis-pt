@@ -164,8 +164,8 @@ and it is the longest answer this screen can ask for over a shipboard link.
 
 **What is still missing:** ingestion of the paper archive with OCR (proposed as its own loop —
 what it actually needs is a bulk import flow, not an OCR call), two product decisions listed in
-`LOOP_STATE.md`, and screens for the dossier, the version history and compensating events —
-all of which work over the API and none of which a deck tablet can reach yet. No
+`LOOP_STATE.md`, and a run against PostgreSQL — every route now has a screen, but the database
+the code claims to be portable to has never actually run it. No
 penetration test has been run; this is a code and design audit by the person who wrote the code,
 and it is worth exactly what that is worth.
 
@@ -412,9 +412,12 @@ A blocking pendency returns `409` with a structured list — `codigo`, `severida
 `campo`, `responsavel` — never a bare sentence, because the screen needs to know which field to
 mark and who is expected to resolve it. `422` still means the payload did not parse at all.
 
-Every route above exists and is tested. Not all of them have a screen yet: the dossier, the
-version history and compensating events are reachable over the API only, and that gap is listed
-in `LOOP_STATE.md` rather than left for someone to discover.
+Every route above exists, is tested, and now has a screen. The last three to get one were the
+version history with its field-by-field diff, the dossier — a download rather than another
+view, because what it adds is being *an artefact* that leaves here and is read somewhere else
+months later — and correcting the trail, which appears only for the profiles the server would
+accept and never rewrites anything: it appends an event pointing at the original, which stays
+on screen exactly where it was.
 
 Both AI routes now have one. `#/ia` asks questions and shows the permits the answer rests on as
 links you can open; the draft proposal lives inside the emission screen rather than in one of

@@ -776,8 +776,143 @@ async function telaDetalhe(id) {
   secao.append(await blocoDeTransicoes(pt));
 
   // --- trilha: o histórico, fechado até alguém pedir ---
-  secao.append(blocoDaTrilha(pt));
+  secao.append(blocoDeVersoes(pt), blocoDaTrilha(pt), blocoDoDossie(pt));
   return secao;
+}
+
+/** Quem pode corrigir a trilha. `admin` passa porque `exigir_perfis` o deixa passar em tudo.
+ *
+ * Isto não é controle de acesso — é a tela não oferecer o que o servidor vai recusar. A regra
+ * de verdade vive em `exigir_perfis(COORDENADOR, OIM)` na rota, e continua valendo se alguém
+ * chamar a API por fora.
+ */
+function podeCompensar() {
+  return ["coordenador", "oim", "admin"].includes(API.usuario?.perfil);
+}
+
+/** O histórico de versões, com o que mudou campo a campo.
+ *
+ * `versao` só sobe quando a PT deixa o rascunho, então cada linha aqui é uma revisão que
+ * alguém assinou — não uma tecla digitada. É o que uma investigação abre para perguntar se o
+ * documento executado é o mesmo que foi aprovado.
+ */
+function blocoDeVersoes(pt) {
+  const bloco = el("details", { class: "painel" }, [
+    el("summary", { texto: "Histórico de versões" }),
+  ]);
+  const destino = el("div");
+  bloco.append(destino);
+
+  let carregada = false;
+  bloco.addEventListener("toggle", async () => {
+    if (!bloco.open || carregada) return;
+    destino.replaceChildren(el("p", { class: "vazio", texto: "Carregando…" }));
+    try {
+      const versoes = await api(`/pts/${pt.id}/versoes`);
+      if (!versoes.length) {
+        destino.replaceChildren(
+          el("p", { class: "vazio", texto: "Nenhuma revisão: a PT não saiu do rascunho." })
+        );
+      } else {
+        destino.replaceChildren(...versoes.map(cartaoDeVersao));
+      }
+      carregada = true;
+    } catch (erro) {
+      destino.replaceChildren(aviso(erro.message, "erro", "Não foi possível carregar"));
+    }
+  });
+  return bloco;
+}
+
+function cartaoDeVersao(versao) {
+  const campos = Object.entries(versao.diff);
+  return el("div", { class: "evento" }, [
+    el("div", { class: "cabeca" }, [
+      el("span", { class: "chip", texto: `versão ${versao.versao}` }),
+      el("span", { class: "momento", texto: instante(versao.criado_em) }),
+    ]),
+    versao.motivo ? el("div", { class: "motivo", texto: versao.motivo }) : null,
+    // A primeira versão não tem antecessora, logo não tem diff — dizer isso é melhor do que
+    // mostrar um bloco vazio que parece defeito.
+    campos.length
+      ? el("div", { class: "diff" }, campos.map(([campo, m]) => mudanca(campo, m)))
+      : el("div", { class: "motivo", texto: "Primeiro retrato do documento." }),
+  ]);
+}
+
+/** Uma mudança de campo. O valor sai como texto, e objeto vira JSON: `perigos` e `respostas`
+ * são estruturas, e "[object Object]" na tela de uma investigação é pior que verboso.
+ */
+function mudanca(campo, { de, para }) {
+  const texto = (valor) =>
+    valor === null || valor === undefined
+      ? "—"
+      : typeof valor === "object"
+        ? JSON.stringify(valor)
+        : String(valor);
+  return el("div", { class: "linha-diff" }, [
+    el("span", { class: "campo", texto: campo }),
+    el("span", { class: "de", texto: texto(de) }),
+    el("span", { class: "seta", texto: "→" }),
+    el("span", { class: "para", texto: texto(para) }),
+  ]);
+}
+
+/** O dossiê é o que se entrega a uma investigação: a PT inteira num arquivo só, com o
+ * veredito da cadeia junto.
+ *
+ * É download e não mais uma tela porque a tela já mostra as partes — o que o dossiê acrescenta
+ * é ser **um artefato**, que sai daqui e é lido em outro lugar, meses depois.
+ */
+function blocoDoDossie(pt) {
+  const destino = el("div", { class: "resultado" });
+  return el("section", { class: "painel" }, [
+    el("h2", { texto: "Dossiê" }),
+    nota("o que é", "A PT inteira num arquivo: versões, assinaturas, anexos, equipe e trilha."),
+    nota("conferido", "Sai com o veredito da cadeia — histórico sem isso não serve como prova."),
+    el("div", { class: "acoes" }, [
+      el("button", {
+        texto: "Baixar dossiê",
+        onclick: async (evento) => {
+          const botao = evento.currentTarget;
+          botao.disabled = true;
+          destino.replaceChildren();
+          try {
+            const dossie = await api(`/pts/${pt.id}/dossie`);
+            baixarJson(`dossie-${pt.numero}.json`, dossie);
+            destino.replaceChildren(
+              aviso(
+                dossie.trilha_integra
+                  ? "Trilha íntegra no momento da exportação."
+                  : "Atenção: a trilha desta PT não fecha. O dossiê registra isso.",
+                dossie.trilha_integra ? "ok" : "erro",
+                `dossie-${pt.numero}.json`
+              )
+            );
+          } catch (erro) {
+            destino.replaceChildren(aviso(erro.message, "erro", "Não foi possível exportar"));
+          } finally {
+            botao.disabled = false;
+          }
+        },
+      }),
+    ]),
+    destino,
+  ]);
+}
+
+/** Mesma mecânica do download de anexo, e pelo mesmo motivo: âncora no documento antes do
+ * clique e revogação adiada, senão o arquivo não desce fora do Chrome e ninguém vê erro.
+ */
+function baixarJson(nome, dados) {
+  const url = URL.createObjectURL(
+    new Blob([JSON.stringify(dados, null, 2)], { type: "application/json" })
+  );
+  const link = el("a", { href: url, download: nome });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
 /** A trilha da PT: o veredito da cadeia e cada elo, na ordem em que foram selados.
@@ -801,8 +936,17 @@ function blocoDaTrilha(pt) {
   // sucesso: a trilha é append-only, então o que já está na tela continua valendo, mas uma
   // falha de rede tem de poder ser tentada de novo fechando e reabrindo.
   let carregada = false;
-  bloco.addEventListener("toggle", async () => {
-    if (!bloco.open || carregada) return;
+
+  // Uma compensação acrescenta um elo — e muda o veredito da cadeia, que é calculado sobre a
+  // trilha inteira. Repintar tudo é o certo: emendar o novo evento no fim da lista deixaria o
+  // veredito na tela falando de uma trilha que não é mais a que está no banco.
+  async function recarregar() {
+    carregada = false;
+    await carregar();
+  }
+
+  async function carregar() {
+    if (carregada) return;
     destino.replaceChildren(el("p", { class: "vazio", texto: "Carregando…" }));
 
     try {
@@ -823,44 +967,118 @@ function blocoDaTrilha(pt) {
               "erro",
               "Cadeia quebrada"
             ),
-        ...trilha.eventos.map((evento) =>
-          el("div", { class: "evento" }, [
-            el("div", { class: "cabeca" }, [
-              el("span", { class: "momento", texto: instante(evento.ocorrido_em) }),
-              // O tipo vai cru, como o servidor o gravou. O catálogo de tipos é aberto por
-              // desenho — traduzi-lo aqui criaria uma segunda cópia dele, livre para divergir,
-              // e um evento novo apareceria em branco na tela em vez de aparecer pelo nome.
-              el("span", { class: "chip", texto: evento.tipo_evento }),
-              evento.estado_destino
-                ? el("span", { texto: `${evento.estado_origem || "—"} → ${evento.estado_destino}` })
-                : null,
-              el("span", { class: "momento", texto: evento.perfil_ator || "sistema" }),
-              evento.evento_compensado_id
-                ? el("span", {
-                    class: "chip atencao",
-                    texto: `corrige o evento ${evento.evento_compensado_id}`,
-                  })
-                : null,
-            ]),
-            evento.motivo ? el("div", { class: "motivo", texto: evento.motivo }) : null,
-            // Os doze primeiros caracteres de cada ponta bastam para acompanhar o encadeamento
-            // na tela: o elo seguinte abre com o que este fechou. A conferência de verdade é do
-            // servidor, e é ela que o veredito acima está reportando.
-            el("div", {
-              class: "elo",
-              texto: `${(evento.hash_anterior || "início").slice(0, 12)} → ${evento.hash_evento.slice(0, 12)}`,
-            }),
-          ])
-        ),
+        ...trilha.eventos.map((evento) => cartaoDeEvento(pt, evento, recarregar)),
       ];
       destino.replaceChildren(...partes.filter(Boolean));
       carregada = true;
     } catch (erro) {
       destino.replaceChildren(aviso(erro.message, "erro", "Trilha indisponível"));
     }
+  }
+
+  bloco.addEventListener("toggle", () => {
+    if (bloco.open) carregar();
   });
 
   return bloco;
+}
+
+/** Um elo da trilha, e — para quem pode — o caminho de corrigi-lo.
+ *
+ * Corrigir aqui nunca reescreve: acrescenta um evento novo que aponta para o original, que
+ * continua visível na tela como sempre esteve. É a regra 4 aparecendo na interface do jeito
+ * que ela existe no banco, e não como um botão de editar que mentiria sobre o que faz.
+ */
+function cartaoDeEvento(pt, evento, recarregar) {
+  const cartao = el("div", { class: "evento" }, [
+    el("div", { class: "cabeca" }, [
+      el("span", { class: "momento", texto: instante(evento.ocorrido_em) }),
+      // O tipo vai cru, como o servidor o gravou. O catálogo de tipos é aberto por desenho —
+      // traduzi-lo aqui criaria uma segunda cópia dele, livre para divergir, e um evento novo
+      // apareceria em branco na tela em vez de aparecer pelo nome.
+      el("span", { class: "chip", texto: evento.tipo_evento }),
+      evento.estado_destino
+        ? el("span", { texto: `${evento.estado_origem || "—"} → ${evento.estado_destino}` })
+        : null,
+      el("span", { class: "momento", texto: evento.perfil_ator || "sistema" }),
+      evento.evento_compensado_id
+        ? el("span", {
+            class: "chip atencao",
+            texto: `corrige o evento ${evento.evento_compensado_id}`,
+          })
+        : null,
+    ]),
+    evento.motivo ? el("div", { class: "motivo", texto: evento.motivo }) : null,
+    // Os doze primeiros caracteres de cada ponta bastam para acompanhar o encadeamento na
+    // tela: o elo seguinte abre com o que este fechou. A conferência de verdade é do servidor,
+    // e é ela que o veredito acima está reportando.
+    el("div", {
+      class: "elo",
+      texto: `${(evento.hash_anterior || "início").slice(0, 12)} → ${evento.hash_evento.slice(0, 12)}`,
+    }),
+  ]);
+
+  // Um evento que já é compensação não ganha botão: corrigir a correção encadeia desculpa em
+  // cima de desculpa e a trilha deixa de contar uma história legível.
+  if (!podeCompensar() || evento.evento_compensado_id) return cartao;
+
+  const area = el("div");
+  cartao.append(
+    el("div", { class: "acoes" }, [
+      el("button", {
+        class: "discreto",
+        texto: "Corrigir",
+        onclick: () => area.replaceChildren(formularioDeCompensacao(pt, evento, recarregar)),
+      }),
+    ]),
+    area
+  );
+  return cartao;
+}
+
+function formularioDeCompensacao(pt, evento, recarregar) {
+  const motivo = el("textarea", { name: "motivo", rows: "2" });
+  const destino = el("div", { class: "resultado" });
+  const enviar = el("button", { texto: "Registrar correção" });
+
+  enviar.addEventListener("click", async () => {
+    if (!motivo.value.trim()) {
+      destino.replaceChildren(
+        aviso(
+          "A correção fica no registro para sempre — sem motivo ela não explica nada.",
+          "erro",
+          "Falta o motivo"
+        )
+      );
+      return;
+    }
+    enviar.disabled = true;
+    try {
+      await api(`/pts/${pt.id}/trilha/${evento.id}/compensacao`, {
+        method: "POST",
+        body: JSON.stringify({ motivo: motivo.value }),
+      });
+      await recarregar();
+    } catch (erro) {
+      destino.replaceChildren(aviso(erro.message, "erro", "Correção recusada"));
+      enviar.disabled = false;
+    }
+  });
+
+  return el("div", { class: "compensacao" }, [
+    el("p", {
+      class: "motivo",
+      texto:
+        `O evento ${evento.id} continua onde está: isto acrescenta um registro novo apontando ` +
+        "para ele. Nada é apagado, e a correção também não se apaga.",
+    }),
+    el("label", {}, [
+      el("span", { class: "rotulo", texto: "O que estava errado" }),
+      motivo,
+    ]),
+    el("div", { class: "acoes" }, [enviar]),
+    destino,
+  ]);
 }
 
 /** Baixa um anexo e entrega ao navegador.
@@ -1195,6 +1413,18 @@ async function rotear() {
   if (!API.token && partes[0] !== "login") {
     location.hash = "#/login";
     return;
+  }
+
+  // Quem está logado, para a tela não oferecer ação que o servidor vai recusar. Falha em
+  // silêncio de propósito: sem sinal o perfil fica desconhecido e as ações restritas somem —
+  // e some é o certo, porque nenhuma delas funciona offline. O servidor continua sendo quem
+  // decide; isto é cortesia de interface, não controle de acesso.
+  if (API.token && !API.usuario) {
+    try {
+      API.usuario = await api("/auth/eu");
+    } catch {
+      API.usuario = null;
+    }
   }
 
   tela.replaceChildren(el("p", { class: "vazio", texto: "Carregando…" }));
