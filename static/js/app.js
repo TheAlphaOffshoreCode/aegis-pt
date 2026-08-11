@@ -274,7 +274,11 @@ function instanteUtc(valorLocal) {
 
 async function telaLista(parametros) {
   const secao = el("section");
-  const filtroEstado = new URLSearchParams(parametros).get("estado") || "";
+  const busca = new URLSearchParams(parametros);
+  const filtroEstado = busca.get("estado") || "";
+  // As fontes citadas pela IA são números de PT, e o número é o que a pessoa reconhece. Chegar
+  // por aqui faz a consulta passar pelo escopo de sempre, em vez de a tela resolver por fora.
+  const filtroNumero = busca.get("numero") || "";
 
   const seletor = el("select", {
     onchange: (e) => {
@@ -291,12 +295,21 @@ async function telaLista(parametros) {
     el("section", { class: "painel" }, [
       el("h2", { texto: "Permissões de trabalho" }),
       el("label", {}, [el("span", { class: "rotulo", texto: "Filtrar" }), seletor]),
+      filtroNumero
+        ? el("p", { class: "vazio" }, [
+            document.createTextNode(`Filtrando por ${filtroNumero} · `),
+            el("a", { href: "#/pts", texto: "ver todas" }),
+          ])
+        : null,
     ])
   );
 
   try {
-    const busca = filtroEstado ? `?estado=${filtroEstado}` : "";
-    const pagina = await api(`/pts${busca}`);
+    const consulta = new URLSearchParams();
+    if (filtroEstado) consulta.set("estado", filtroEstado);
+    if (filtroNumero) consulta.set("numero", filtroNumero);
+    const sufixo = consulta.toString() ? `?${consulta}` : "";
+    const pagina = await api(`/pts${sufixo}`);
     if (pagina.__doCache) {
       secao.append(aviso("Sem conexão: esta lista é a última cópia recebida.", "", "Dado local"));
     }
@@ -463,9 +476,214 @@ async function telaNova() {
 
   secao.append(
     bloco,
+    // O rascunho por IA mora aqui, e não numa tela própria, porque é a mesma emissão: mesma
+    // área, mesma janela e o mesmo formulário preenchido a bordo. O que muda é quem escreve o
+    // texto. Uma segunda tela seria este formulário inteiro copiado, livre para divergir dele.
+    blocoDeRascunhoPorIA({ areas, area, de, ate, respostas }),
     // Emitir não vai para a fila offline, ao contrário de corrigir rascunho: o número da PT é
     // do servidor, e sair da tela com uma PT que ainda não existe é pior que não emitir.
     el("p", { class: "vazio", texto: "A emissão exige conexão." })
+  );
+  return secao;
+}
+
+/** Descreve o serviço em texto livre e a IA propõe o rascunho.
+ *
+ * A divisão de trabalho é a do L10 e está escrita na tela: a IA escreve tipo, descrição,
+ * perigos e controles; a janela de validade e as respostas do formulário são de quem vai a
+ * bordo, e o modelo nunca as vê. Por isso este bloco reaproveita os campos já preenchidos
+ * acima em vez de perguntar de novo.
+ */
+function blocoDeRascunhoPorIA({ areas, area, de, ate, respostas }) {
+  const descricaoLivre = el("textarea", {
+    name: "descricao_livre",
+    rows: "3",
+    placeholder: "Preciso soldar um suporte de tubulação que trincou na área do compressor.",
+  });
+  const destino = el("div", { class: "resultado" });
+  const botao = el("button", { texto: "Propor rascunho" });
+
+  botao.addEventListener("click", async () => {
+    if (descricaoLivre.value.trim().length < 10) {
+      destino.replaceChildren(
+        aviso("Descreva o serviço em pelo menos uma frase.", "erro", "Descrição curta demais")
+      );
+      return;
+    }
+    if (!de.value || !ate.value) {
+      destino.replaceChildren(
+        aviso(
+          "A janela de validade é sua, não da IA — preencha 'válida de' e 'válida até' acima.",
+          "erro",
+          "Falta a janela"
+        )
+      );
+      return;
+    }
+    const escolhida = areas.find((a) => String(a.id) === area.value);
+    botao.disabled = true;
+    destino.replaceChildren(
+      el("p", { class: "vazio", texto: "Lendo PTs parecidas e redigindo… pode levar minutos." })
+    );
+    try {
+      const resultado = await api("/ai/rascunho", {
+        method: "POST",
+        body: JSON.stringify({
+          descricao_livre: descricaoLivre.value,
+          unidade_id: escolhida.unidade_id,
+          area_id: escolhida.id,
+          valida_de: instanteUtc(de.value),
+          valida_ate: instanteUtc(ate.value),
+          respostas,
+        }),
+      });
+      // Sem ir direto para a PT: a justificativa diz em que a proposta se baseou e o que ficou
+      // faltando, e é escrita para quem vai revisar. Trocar de tela a jogaria fora.
+      destino.replaceChildren(
+        aviso(`${resultado.pt.numero} criada em rascunho.`, "ok", "Proposta pronta para revisão"),
+        el("div", { class: "resposta", texto: resultado.justificativa }),
+        resultado.fontes.length
+          ? el("div", { class: "fontes" }, [
+              el("span", { class: "rotulo", texto: "Baseado em" }),
+              ...resultado.fontes.map((numero) =>
+                el("a", { class: "chip", href: `#/pts?numero=${numero}`, texto: numero })
+              ),
+            ])
+          : el("p", { class: "vazio", texto: "Nenhuma PT parecida no acervo — texto escrito do zero." }),
+        el("div", { class: "acoes" }, [
+          el("a", { class: "chip", href: `#/pt/${resultado.pt.id}`, texto: "Abrir a PT →" }),
+        ])
+      );
+    } catch (erro) {
+      destino.replaceChildren(aviso(erro.message, "erro", "A proposta foi recusada"));
+    } finally {
+      botao.disabled = false;
+    }
+  });
+
+  return el("details", { class: "painel" }, [
+    el("summary", { texto: "Ou descreva o serviço e deixe a IA propor" }),
+    nota("a IA", "Escreve tipo de trabalho, descrição do serviço, perigos e controles."),
+    nota("você", "A janela de validade e as respostas do formulário, preenchidas acima."),
+    nota("nunca vê", "As respostas do formulário — medição não sai de modelo de linguagem."),
+    nota("rascunho", "Nasce pelo caminho de qualquer PT, com o mesmo fluxo pela frente."),
+    // O tipo é escolhido pela IA, então o formulário preenchido acima pode não ser o do tipo
+    // que ela escolher. Dizer isso antes é melhor do que deixar a recusa parecer defeito.
+    nota("tipo", "Escolhido pela IA. Se o formulário for de outro tipo, nada é criado e a recusa diz quais campos faltam."),
+    el("label", {}, [
+      el("span", { class: "rotulo", texto: "Descrição do serviço, em texto livre" }),
+      descricaoLivre,
+    ]),
+    el("div", { class: "acoes" }, [botao]),
+    destino,
+  ]);
+}
+
+/* --- IA ---------------------------------------------------------------------------------- */
+
+/** Rótulo curto e uma frase. Não é `linha()`: aquele é `dt`/`dd` para valor de dado, em fonte
+ * monoespaçada e alinhado à direita — com uma frase inteira vira uma coluna estreita ilegível.
+ */
+function nota(rotulo, texto) {
+  return el("div", { class: "pendencia" }, [
+    el("span", { class: "chip", texto: rotulo }),
+    el("span", { texto }),
+  ]);
+}
+
+/** O que a IA entregou, com a origem em primeiro plano.
+ *
+ * `fontes` são as PTs que as ferramentas leram no banco, e não as que o texto menciona. Por
+ * isso a lista vazia é mostrada como estado próprio, e não escondida: quando ela está vazia o
+ * servidor já trocou a resposta do modelo por "não encontrei", e a tela precisa dizer que ali
+ * não há nada em que se apoiar — não que a IA falhou.
+ */
+function blocoDaResposta(resultado) {
+  const temFonte = resultado.fontes.length > 0;
+  return el("div", {}, [
+    el("span", {
+      class: `chip ${temFonte ? "integra" : "atencao"}`,
+      texto: temFonte
+        ? `${resultado.fontes.length} ${resultado.fontes.length === 1 ? "PT" : "PTs"} de origem`
+        : "sem PT de origem — nada a citar",
+    }),
+    el("div", { class: "resposta", texto: resultado.resposta }),
+    temFonte
+      ? el("div", { class: "fontes" }, [
+          el("span", { class: "rotulo", texto: "Baseado em" }),
+          // O número é o que a pessoa reconhece; o link leva à PT pela lista, que já aplica o
+          // escopo. Citação que não dá para abrir e conferir é citação pela metade.
+          ...resultado.fontes.map((numero) =>
+            el("a", { class: "chip", href: `#/pts?numero=${numero}`, texto: numero })
+          ),
+        ])
+      : null,
+    el("p", {
+      class: "vazio",
+      texto:
+        `${resultado.iteracoes} ${resultado.iteracoes === 1 ? "consulta" : "consultas"} ao ` +
+        `acervo · ${resultado.tokens_entrada + resultado.tokens_saida} tokens`,
+    }),
+  ]);
+}
+
+async function telaIA() {
+  const secao = el("section");
+  const pergunta = el("textarea", {
+    name: "pergunta",
+    rows: "3",
+    placeholder: "Quais PTs de trabalho a quente estão abertas no convés?",
+  });
+  const destino = el("div", { class: "resultado" });
+  const botao = el("button", { texto: "Perguntar" });
+
+  botao.addEventListener("click", async () => {
+    const texto = pergunta.value.trim();
+    if (texto.length < 3) {
+      destino.replaceChildren(aviso("Escreva a pergunta.", "erro", "Faltou a pergunta"));
+      return;
+    }
+    botao.disabled = true;
+    // Uma pergunta vira várias idas ao modelo, e com um modelo local a bordo isso passa de um
+    // minuto. Uma tela parada sem explicação faz a pessoa clicar de novo — e cada clique é
+    // outra consulta inteira.
+    destino.replaceChildren(
+      el("p", { class: "vazio", texto: "Consultando as PTs do seu acesso… pode levar um minuto." })
+    );
+    try {
+      const resultado = await api("/ai/consulta", {
+        method: "POST",
+        body: JSON.stringify({ pergunta: texto }),
+      });
+      destino.replaceChildren(blocoDaResposta(resultado));
+    } catch (erro) {
+      destino.replaceChildren(aviso(erro.message, "erro", "A consulta não foi respondida"));
+    } finally {
+      botao.disabled = false;
+    }
+  });
+
+  secao.append(
+    el("section", { class: "painel" }, [
+      el("h2", { texto: "Perguntar sobre as PTs" }),
+      el("label", {}, [
+        el("span", { class: "rotulo", texto: "Pergunta" }),
+        pergunta,
+      ]),
+      el("div", { class: "acoes" }, [botao]),
+      destino,
+    ]),
+    // O que esta tela é e o que ela não é, escrito onde alguém a usa pela primeira vez. Não é
+    // recado de rodapé: é o contrato do produto, e é o que separa isto de um chat sobre
+    // segurança do trabalho.
+    el("section", { class: "painel" }, [
+      el("h2", { texto: "O que a IA faz aqui" }),
+      nota("lê", "Não aprova, não libera e não encerra PT — isso é de gente, na tela da PT."),
+      nota("escopo", "Ela alcança exatamente as PTs que você já alcança, e nada além."),
+      nota("origem", "Resposta que não se apoie numa PT do acervo não é entregue."),
+      nota("números", "Prazo, validade e veredito são calculados pelo sistema, não redigidos."),
+      el("p", { class: "vazio", texto: "Perguntar exige conexão." }),
+    ])
   );
   return secao;
 }
@@ -985,6 +1203,7 @@ async function rotear() {
     if (partes[0] === "sair") return sair();
     if (partes[0] === "login") conteudo = telaLogin();
     else if (partes[0] === "nova") conteudo = await telaNova();
+    else if (partes[0] === "ia") conteudo = await telaIA();
     else if (partes[0] === "pt") conteudo = await telaDetalhe(partes[1]);
     else if (partes[0] === "painel") conteudo = await telaPainel();
     else conteudo = await telaLista(parametros);

@@ -24,6 +24,7 @@ Fonte de verdade para retomar o trabalho. Atualizado ao fim de cada loop.
 | — | Trilha na tela e agendador de alertas (P41) | ✅ concluído | 2026-08-10 |
 | — | Versão do service worker derivada do shell | ✅ concluído | 2026-08-10 |
 | — | Modelo local por Ollama (P32) | ✅ concluído | 2026-08-10 |
+| — | Tela da IA: perguntar e propor rascunho | ✅ concluído | 2026-08-10 |
 
 ---
 
@@ -1174,3 +1175,79 @@ preencher `AEGIS_ANTHROPIC_API_KEY`. O Ollama cai por ociosidade: `ollama serve`
 
 Os dois loops de IA seguem sem interface — agora com modelo local e tudo. Dossiê, versões e
 evento compensatório também.
+
+---
+
+## Fora de loop — a tela da IA (10/08/2026)
+
+Os dois loops de IA estavam pagos, testados e documentados havia três dias, e **nenhuma pessoa
+a bordo os alcançava**: só por `curl`. É a mesma dívida que a tela de emissão tinha em 09/08 —
+função que existe e não tem por onde ser usada não está entregue.
+
+### Entregue
+
+- **`#/ia` — perguntar.** Campo, botão, estado de espera honesto, a resposta em texto corrido e
+  as PTs de origem como **links que abrem a PT citada**.
+- **Rascunho por IA dentro da tela de emissão**, num `<details>` fechado. Não é tela nova.
+- **`#/pts?numero=` na lista**, que é para onde a citação leva — a busca por número já existia
+  na API e não tinha caminho pela tela.
+- Dois testes de contrato de frontend que atacam falhas que este projeto já teve.
+
+### Decisões
+
+- **O rascunho não ganhou tela própria.** É a mesma emissão: mesma área, mesma janela, mesmo
+  formulário preenchido a bordo. O que muda é quem escreve o texto. Uma segunda tela seria este
+  formulário inteiro copiado, livre para divergir dele — e divergir de um formulário de PT é
+  divergir do documento que autoriza trabalho de risco.
+- **A citação é link, não rótulo.** Citação que não dá para abrir e conferir é citação pela
+  metade — e o caminho passa pela lista, que já aplica o escopo, em vez de a tela resolver por
+  fora.
+- **O que a IA faz e não faz está escrito na tela**, não em documentação: que ela lê e não
+  aprova, que alcança só o seu escopo, que resposta sem origem não é entregue e que os números
+  vêm do sistema. É o contrato do produto no lugar onde alguém o usa pela primeira vez.
+- **Sem markdown na resposta.** O modelo devolvia `**PT-2026-0002**` e a tela mostrava os
+  asteriscos. Formatação é lugar de prompt — não é garantia, é aparência, e ali o prompt é o
+  instrumento certo. Uma linha nas instruções, nenhuma linha de parser.
+- **Estado de espera obrigatório.** Uma consulta local passa de um minuto. Tela parada faz a
+  pessoa clicar de novo, e cada clique é outra consulta inteira: o botão desabilita e a tela
+  diz o que está acontecendo.
+
+### Três defeitos meus, achados na tela e não nos testes
+
+**`SAIR` saiu da tela.** A quinta aba empurrou a nav além dos 390 px. Ela rola, por desenho —
+mas num tablet de convés **compartilhado**, sair é o que separa identidades: o cache de dados e
+a fila de envio são por pessoa, e uma aba de sair difícil de achar é gente operando na sessão de
+outro. O rótulo virou `IA` e as cinco couberam. **Cinco abas é o teto desta nav a 390 px.**
+
+**Usei `linha()` para prosa.** Aquele helper é `dt`/`dd` para valor de dado: fonte monoespaçada,
+alinhado à direita. Com uma frase inteira virou uma coluna estreita ilegível. Virou `nota()`,
+que é o padrão de `.pendencia` — rótulo curto e frase — que já existia para exatamente isto.
+
+**Chip de rótulo encolhia.** Em `display: flex`, "a IA" quebrava em duas linhas e a margem
+esquerda do bloco ficava serrilhada. `flex: none` no chip dentro de `.pendencia`, o que também
+protege os chips de severidade que já viviam ali.
+
+### Aceite
+
+**272 testes** (2 novos), CI verde. Os dois novos foram provados nos dois sentidos:
+
+- `test_toda_aba_do_shell_tem_rota_no_roteador` — uma aba fantasma no `index.html` derruba.
+  É exatamente o defeito de 10/08, quando a aba EMITIR não fazia nada: o roteador cai num
+  `else` final que redesenha a lista, então aba sem rota parece a mesma tela voltando.
+- `test_todo_caminho_chamado_pela_tela_existe_na_api` — `/ai/consluta` derruba. A conferência
+  que já existia cobria só respostas de `GET` guardadas numa `const`; as chamadas de escrita,
+  inclusive as duas de IA, passavam inteiras por fora.
+
+Conferido num Chrome dirigido por CDP, a 390 px, contra o `gemma4:8b` e o banco de
+desenvolvimento:
+
+- Pergunta pela tela → 3 PTs de origem, chips com `href` para cada uma, e seguir a citação
+  filtra a lista para exatamente aquela PT.
+- Rascunho pela tela → **PT-2026-0004** criada, justificativa na tela e o link para abrir a PT.
+- Botão desabilitado e mensagem de espera durante a consulta; recusa por janela ausente antes
+  de gastar uma chamada ao modelo.
+- Nenhum erro no console.
+
+### O que continua sem tela
+
+Dossiê, versões e evento compensatório.

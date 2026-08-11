@@ -257,3 +257,40 @@ def test_a_tela_sabe_ler_o_erro_de_validacao_da_api(
     for item in resposta.json()["detail"]:
         legivel = [item[k] for k in conhecidas if item.get(k)]
         assert legivel, f"a tela não teria texto para mostrar deste item: {item}"
+
+
+def test_toda_aba_do_shell_tem_rota_no_roteador() -> None:
+    """A aba EMITIR já ficou clicável e sem destino, e nada quebrou — só não acontecia nada.
+
+    O roteador cai num `else` final que redesenha a lista, então uma aba sem rota parece a
+    mesma tela voltando. É o tipo de defeito que nenhum teste de backend alcança e que a pessoa
+    a bordo interpreta como aplicativo travado.
+    """
+    html = (ESTATICO / "index.html").read_text(encoding="utf-8")
+    js = (ESTATICO / "js" / "app.js").read_text(encoding="utf-8")
+
+    abas = set(re.findall(r'href="#/(\w+)"', html))
+    roteadas = set(re.findall(r'partes\[0\] === "(\w+)"', js))
+
+    assert abas, "nenhuma aba encontrada no shell — regex quebrado?"
+    # A lista é o destino do `else` final e por isso não aparece como comparação explícita.
+    assert abas - roteadas <= {"pts"}
+
+
+def test_todo_caminho_chamado_pela_tela_existe_na_api(client: TestClient) -> None:
+    """Um caminho com erro de digitação só aparece quando alguém aperta o botão.
+
+    A conferência de forma que já existe aqui cobre só as respostas de `GET` guardadas numa
+    `const`. As chamadas de escrita — inclusive as duas de IA — passavam inteiras por fora, e
+    são justamente as que ninguém exercita sem rede e sem chave.
+    """
+    js = (ESTATICO / "js" / "app.js").read_text(encoding="utf-8")
+    rotas = {_rota_generica(rota) for rota in client.get("/openapi.json").json()["paths"]}
+
+    chamados = {
+        _rota_generica(caminho)
+        for caminho in re.findall(r"""\bapi\(\s*[`"']([^`"']+)[`"']""", js)
+    }
+
+    assert len(chamados) >= 8, f"só {len(chamados)} caminhos casaram — regex quebrado?"
+    assert chamados <= rotas, f"a tela chama o que a API não tem: {sorted(chamados - rotas)}"

@@ -416,6 +416,13 @@ button:focus-visible {
 .pendencia:last-child,
 .anexo:last-child { border-bottom: none; }
 
+/* O chip é rótulo, e rótulo não encolhe: disputando a linha com o texto ao lado, "a IA"
+   quebrava em duas e o bloco ficava com a margem esquerda serrilhada. */
+.pendencia > .chip {
+  flex: none;
+  white-space: nowrap;
+}
+
 /* --- trilha ---------------------------------------------------------------------------- */
 
 /* `<details>` nativo: recolher e expandir sem uma linha de JavaScript, com teclado e leitor de
@@ -487,3 +494,61 @@ details.painel > summary:focus-visible {
 /* Não há bloco de `prefers-reduced-motion` porque não há animação nem transição nenhuma
    nesta folha. Um `animation: none !important` global aqui seria código morto que ainda por
    cima mataria qualquer feedback de estado que viesse a existir. */
+
+/* --- IA -------------------------------------------------------------------------------- */
+
+/* O resultado nasce colado no botão que o pediu. O respiro é aqui e não no primeiro filho
+   porque o bloco troca de conteúdo — espera, resposta ou aviso — e cada um começa por um
+   elemento diferente. */
+.resultado {
+  margin-top: 14px;
+}
+
+.resultado > .chip {
+  display: inline-block;
+  margin-bottom: 8px;
+}
+
+/* A resposta chega com as quebras de linha que o modelo escolheu, e elas carregam sentido —
+   uma PT por linha. `pre-wrap` preserva a quebra sem transformar o texto num bloco de código,
+   e a entrelinha é maior que a do resto porque isto é prosa, não dado tabular. */
+.resposta {
+  white-space: pre-wrap;
+  line-height: 1.6;
+  font-size: 14px;
+  margin: 10px 0;
+}
+
+.fontes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+/* O rótulo dentro de `.fontes` não é rótulo de campo: fica na linha, não acima dela. */
+.fontes .rotulo {
+  font-size: 12px;
+  color: var(--texto-fraco);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Chip que é link ganha alvo de toque de verdade e um estado de foco visível — sem isto ele
+   parece um rótulo e mede 17 px de altura, que ninguém acerta com luva no convés. */
+a.chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  color: var(--cyan);
+  text-decoration: none;
+}
+
+a.chip:hover { border-color: var(--cyan); }
+
+a.chip:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}

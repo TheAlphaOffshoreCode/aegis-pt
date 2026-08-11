@@ -38,7 +38,11 @@ com o que parece plausível.
 completar por conta própria.
 
 Responda em português do Brasil, de forma direta e curta. Uma pessoa a bordo lê isso com o \
-rádio na outra mão."""
+rádio na outra mão.
+
+Escreva em texto puro, sem marcação: nada de asteriscos, cerquilhas, tabelas ou blocos de \
+código. A tela mostra o que você escrever exatamente como veio, então marcação vira sujeira \
+na frente de quem lê. Para enumerar, use uma linha por item começando pelo número da PT."""
 
 
 class ClienteClaude(Protocol):

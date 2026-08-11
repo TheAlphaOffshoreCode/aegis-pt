@@ -296,6 +296,15 @@ Deviations: `SUSPENSA` (only from `EM_EXECUCAO`) and `REJEITADA` (returns to `RA
   them as one cost half an hour of looking in the wrong place while Ollama was up and its
   runner was crashing on load. The error body stays out of the `503` — whoever reads it is on
   deck, not at a console.
+- **Five tabs is the ceiling for the nav at 390 px.** A sixth pushes `SAIR` off screen. It
+  scrolls by design, but the deck tablet is *shared*: the data cache and the send queue are
+  per-identity, so a hard-to-reach logout means people working in someone else's session.
+- **`linha()` is `dt`/`dd` for a data value** — monospaced and right-aligned. A whole sentence
+  in it becomes an unreadable narrow column. Prose with a short label uses `nota()`, which is
+  the `.pendencia` pattern that already existed for exactly that.
+- **The model's answer is rendered as text, so the prompt forbids markdown.** Asterisks were
+  reaching the screen. Formatting is appearance rather than a guarantee, which is the one place
+  a prompt is the right instrument — and it costs one line instead of a parser.
 - **Pin `num_gpu` when the machine has more than one small GPU.** Ollama's automatic layer
   split across two 4 GB cards trips `GGML_ASSERT(n_inputs < GGML_SCHED_MAX_SPLIT_INPUTS)` and
   kills the runner. Left unset on a server whose card fits the model, its own choice is better.

@@ -13,7 +13,7 @@ audit trail that survives an incident investigation.
 [![CI](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml/badge.svg)](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Status: L13 of L13 — complete](https://img.shields.io/badge/status-L13_of_L13_complete-22c55e.svg)](#roadmap)
-[![Tests: 270](https://img.shields.io/badge/tests-270_passing-22c55e.svg)](#tests)
+[![Tests: 272](https://img.shields.io/badge/tests-272_passing-22c55e.svg)](#tests)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Offline capable](https://img.shields.io/badge/PWA-offline_reads-0ea5e9.svg)](#offshore-constraints)
 
@@ -164,8 +164,8 @@ and it is the longest answer this screen can ask for over a shipboard link.
 
 **What is still missing:** ingestion of the paper archive with OCR (proposed as its own loop —
 what it actually needs is a bulk import flow, not an OCR call), two product decisions listed in
-`LOOP_STATE.md`, and screens for the dossier, the version history, compensating events and both
-AI routes — all of which work over the API and none of which a deck tablet can reach yet. No
+`LOOP_STATE.md`, and screens for the dossier, the version history and compensating events —
+all of which work over the API and none of which a deck tablet can reach yet. No
 penetration test has been run; this is a code and design audit by the person who wrote the code,
 and it is worth exactly what that is worth.
 
@@ -313,7 +313,7 @@ way to create accounts with a known password.
 python -m pytest -q
 ```
 
-Two hundred and seventy tests, none of which reach the network — the AI loop is exercised
+Two hundred and seventy-two tests, none of which reach the network — the AI loop is exercised
 with an injected client, and the suite forces the API key, the local model URL and the model
 name to fixed values, so nothing in a developer's `.env` can make the tests call out, bill, or
 assert what that machine happens to have installed. The ones worth naming are those
@@ -413,11 +413,17 @@ A blocking pendency returns `409` with a structured list — `codigo`, `severida
 mark and who is expected to resolve it. `422` still means the payload did not parse at all.
 
 Every route above exists and is tested. Not all of them have a screen yet: the dossier, the
-version history, compensating events and the two AI routes are reachable over the API only,
-and that gap is listed in `LOOP_STATE.md` rather than left for someone to discover.
+version history and compensating events are reachable over the API only, and that gap is listed
+in `LOOP_STATE.md` rather than left for someone to discover.
 
-The `/ai/*` routes answer `503` when no API key is configured. The AI degrades on its own; the
-rest of the application starts and works without it.
+Both AI routes now have one. `#/ia` asks questions and shows the permits the answer rests on as
+links you can open; the draft proposal lives inside the emission screen rather than in one of
+its own, because it is the same emission — same area, same window, same form filled on deck —
+and only the writing changes hands. A second screen would have been that form copied, free to
+drift from it.
+
+The `/ai/*` routes answer `503` when neither an API key nor a local model is configured. The AI
+degrades on its own; the rest of the application starts and works without it.
 
 ## Roadmap
 
