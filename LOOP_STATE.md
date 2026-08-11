@@ -25,6 +25,8 @@ Fonte de verdade para retomar o trabalho. Atualizado ao fim de cada loop.
 | — | Versão do service worker derivada do shell | ✅ concluído | 2026-08-10 |
 | — | Modelo local por Ollama (P32) | ✅ concluído | 2026-08-10 |
 | — | Tela da IA: perguntar e propor rascunho | ✅ concluído | 2026-08-10 |
+| — | Dossiê, versões e correção da trilha na tela | ✅ concluído | 2026-08-11 |
+| — | PostgreSQL de verdade e a P49 exercitada | ✅ concluído | 2026-08-11 |
 
 ---
 
@@ -1327,3 +1329,94 @@ não**, e sem ele o daemon não sobe — instalar exige reinício, que é decis�
 como a maior lacuna do projeto: a P49 (bifurcação da cadeia sob concorrência) é um defeito que
 o SQLite **esconde** pela trava global de escrita, e a correção dela nunca foi exercitada no
 banco onde o problema existe.
+
+---
+
+## PostgreSQL, enfim — e a P49 exercitada onde o defeito existe (2026-08-11)
+
+**Entregue:** a suíte inteira verde nos dois bancos, as migrations subindo num servidor real, o
+percurso completo da PT rodado contra PostgreSQL pela API, um teste que encena a corrida da P49
+de verdade, e um job de CI que passa a rodar tudo isso a cada push.
+**Aceite:** **273 testes**, `272 passed, 1 skipped` em cada banco — e o par de skips é o ponto.
+
+### O bloqueio estava mal diagnosticado
+
+Estava escrito que faltava PostgreSQL porque o Docker precisa de WSL e o WSL precisa de
+reinício. Só que o projeto nunca precisou de Docker: precisa de **um servidor PostgreSQL num
+URL**. O binário oficial para Windows é um zip — `initdb`, `pg_ctl start` numa porta alta, e
+pronto. Sem instalador, sem serviço, sem admin e sem reiniciar nada.
+
+Vale como regra geral: **quando um bloqueio parece exigir uma decisão cara, conferir se ele é o
+requisito ou só o primeiro caminho que veio à cabeça.** Três loops carregaram "falta PostgreSQL"
+como pendência ambiental quando o que faltava era meia hora e um `initdb`.
+
+### O que a mudança de banco custou: quase nada, e isso é o resultado
+
+Uma execução, um teste falhando: `test_foreign_keys_ativas_no_sqlite` mandando `PRAGMA` para o
+PostgreSQL. O nome já dizia que ele era do SQLite — ganhou `skipif` por dialeto, porque no
+PostgreSQL chave estrangeira **não é opcional** e não há garantia a provar ali. O `UTCDateTime`
+do L4, o `enum_col`, a `naming_convention`, o `render_as_batch`, a paginação, o append-only:
+tudo passou de primeira. "Mesmo código, só a URL muda" deixou de ser afirmação.
+
+### A P49, encenada de verdade
+
+O teste que existia inseria as duas irmãs **de uma vez** — o *estado* que a corrida deixaria — e
+dizia com todas as letras que a corrida em si não dava para encenar no SQLite. Agora dá:
+
+- duas conexões, cada uma numa thread, em `REPEATABLE READ`;
+- o snapshot congela no primeiro `SELECT`, então **as duas leem o mesmo último elo** mesmo que
+  uma commite primeiro — que é o que duas requisições simultâneas fazem sem combinar nada;
+- uma grava, a outra leva `IntegrityError` da `UNIQUE (pt_id, hash_anterior)`, e a cadeia
+  continua fechando.
+
+`REPEATABLE READ` é o que torna o teste determinístico em vez de intermitente. Uma barreira
+entre as threads não bastaria: em `READ COMMITTED` a releitura dentro de `registrar_evento`
+enxergaria o commit da outra e não haveria disputa nenhuma — o teste passaria sem testar.
+
+O assert é `sorted(desfechos) == ["gravou", "recusado"]`. Sem a restrição vira
+`["gravou", "gravou"]`, que é a bifurcação — a prova negativa está na forma do assert, sem
+precisar encenar o banco sem a garantia.
+
+### Rodado de verdade, como sempre
+
+Percurso completo pela API contra PostgreSQL 18, banco limpo, migrations e seed:
+
+- `PT-2026-0001` criada com `estado: "LIBERACAO"` e `numero` falso no corpo — **ignorados**, a PT
+  nasceu `RASCUNHO` com a numeração do servidor;
+- o motor acusou `equipe_vazia` e `documento_ausente`;
+- `RASCUNHO → VALIDACAO → ANALISE_SMS → APROVACAO → LIBERACAO`, quatro assinaturas de quatro
+  pessoas, **cinco elos, cadeia íntegra**;
+- o requisitante tentando liberar a própria PT levou **409** (regra 8);
+- o executante tentando iniciar o trabalho levou **409** com os dois bloqueios, e a PT **não
+  saiu** de `LIBERACAO`;
+- o alerta saiu `certificacao_vencida` no nível 2, responsável OIM — o vocabulário corrigido no
+  L11 valendo no banco novo.
+
+### Arquivos tocados
+
+| Arquivo | Papel |
+|---|---|
+| `requirements.txt` | `psycopg[binary]` — o driver de produção faltava, e sem ele a portabilidade era inexercitável |
+| `tests/conftest.py` | `setdefault` na URL: o `.env` continua barrado, o shell passa a escolher o banco |
+| `tests/test_bootstrap.py` | `skipif` no teste do `PRAGMA`, que é mecanismo do SQLite |
+| `tests/test_auditoria.py` | a corrida real, com duas conexões e `REPEATABLE READ` |
+| `.github/workflows/ci.yml` | job `postgres` com `services: postgres:18`, migrations e suíte |
+| `README.md` | PostgreSQL deixa de ser lacuna; fontes locais corrigidas (envelhecidas desde o L12) |
+
+### O README envelheceu pela terceira vez
+
+Ele ainda dizia que as fontes "serão embarcadas no L11–L12" e que "hoje o shell cai em fonte de
+sistema" — resolvido no L12, há três dias. É a terceira vez que isto acontece, e as duas
+primeiras já estão registradas neste arquivo. **A rotina de fechar loop não está pegando, porque
+depende de eu lembrar.** O que pegaria de verdade é um teste que compare a contagem de testes do
+badge com a suíte real; fica como P52.
+
+### Pendências
+
+| # | Pendência | Destino |
+|---|---|---|
+| ~~P49~~ | ~~Correção da bifurcação nunca exercitada no PostgreSQL~~ — corrida encenada, teste no CI | resolvido aqui |
+| ~~P13~~ | ~~Portabilidade de banco afirmada e não provada~~ — suíte verde nos dois, CI roda os dois | resolvido aqui |
+| P52 | O README envelhece em silêncio (três vezes). Um teste que confira o badge de contagem contra a suíte transformaria isso em falha em vez de vergonha | próximo trabalho |
+| P53 | Não há teste de carga nem de concorrência além do elo da trilha. Numeração de PT e sincronização de alertas também têm corrida possível, e agora existe banco onde encenar | quando pedirem |
+| P54 | O PostgreSQL usado foi um binário no diretório temporário desta máquina. Continua **sem Dockerfile** e sem execução fora do localhost | deploy |

@@ -3,7 +3,11 @@
 import os
 
 os.environ["AEGIS_SECRET_KEY"] = "chave-de-teste-com-mais-de-trinta-e-dois-caracteres"
-os.environ["AEGIS_DATABASE_URL"] = "sqlite:///./test_aegis.db"
+# `setdefault`, e não atribuição, só aqui: o que precisa ser barrado é o `.env` da máquina,
+# que o pydantic lê depois e nunca passa por `os.environ`. Quem exporta a variável no shell
+# está escolhendo o banco de propósito — é como a suíte roda contra PostgreSQL, que é onde
+# vivem a concorrência real e o fuso com offset que o SQLite não tem.
+os.environ.setdefault("AEGIS_DATABASE_URL", "sqlite:///./test_aegis.db")
 os.environ["AEGIS_ENVIRONMENT"] = "development"
 # Uploads dos testes ficam longe da pasta real da aplicação.
 os.environ["AEGIS_UPLOAD_DIR"] = "./test_uploads"

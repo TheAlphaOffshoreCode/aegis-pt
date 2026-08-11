@@ -25,3 +25,39 @@ jobs:
       - run: pip install -r requirements.txt
       # Sem .env no runner: o conftest define AEGIS_* antes de importar a aplicação.
       - run: python -m pytest -q
+
+  # O banco de produção. O SQLite esconde classes inteiras de defeito — a cadeia de auditoria
+  # bifurcando sob concorrência (P49) não acontece lá, porque a trava do arquivo serializa os
+  # escritores. Rodar a suíte nos dois é o que impede "mesmo código, só a URL muda" de voltar a
+  # ser afirmação não verificada.
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: senha-de-ci
+          POSTGRES_DB: aegis_pt
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+      - run: pip install -r requirements.txt
+      # A migration é o primeiro contrato a conferir: o esquema tem de nascer no banco real,
+      # não só no SQLite que o `create_all` dos testes monta.
+      - run: python -m alembic upgrade head
+        env:
+          AEGIS_DATABASE_URL: postgresql+psycopg://postgres:senha-de-ci@localhost:5432/aegis_pt
+          AEGIS_SECRET_KEY: chave-de-ci-com-mais-de-trinta-e-dois-caracteres
+      - run: python -m pytest -q
+        env:
+          AEGIS_DATABASE_URL: postgresql+psycopg://postgres:senha-de-ci@localhost:5432/aegis_pt

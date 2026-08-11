@@ -1,5 +1,6 @@
 """Trilha imutável: a cadeia detecta adulteração, e o ORM recusa alterá-la."""
 
+import threading
 from collections.abc import Callable
 from datetime import timedelta
 
@@ -9,8 +10,9 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.audit.trilha import Contexto, calcular_hash, montar_payload
+from app.audit.trilha import Contexto, calcular_hash, montar_payload, registrar_evento
 from app.audit.verificador import verificar_cadeia
+from app.database import SessionLocal, engine
 from app.models import Area, AuditEvent, ModeloPT, PermissaoTrabalho, Unidade, Usuario
 from app.models.auditoria import TrilhaImutavel
 from app.models.enums import EstadoPT, PerfilUsuario, TipoTrabalho, TipoUnidade
@@ -382,3 +384,66 @@ def test_banco_recusa_dois_eventos_encadeados_no_mesmo_elo(
     db.rollback()
 
     assert verificar_cadeia(_eventos(db, pt.id), pt.uuid) == []
+
+
+@pytest.mark.skipif(
+    engine.dialect.name != "postgresql",
+    reason="O SQLite serializa escritores pela trava do arquivo: a corrida não acontece lá.",
+)
+def test_dois_escritores_simultaneos_nao_bifurcam_a_cadeia(
+    pt_com_trilha: dict, db: Session
+) -> None:
+    """A corrida encenada de verdade, com duas conexões disputando o mesmo elo.
+
+    O teste acima insere as duas irmãs de uma vez, que é o *estado* que a corrida deixaria. Este
+    encena a corrida em si — o que só o PostgreSQL permite, e é por isso que a P49 passou de L4 a
+    L13 corrigida no papel e nunca exercitada onde o defeito existe.
+
+    `REPEATABLE READ` é o que torna determinístico: as duas transações abrem o snapshot antes da
+    barreira, então ambas leem o mesmo último elo mesmo que uma commite primeiro — exatamente o
+    que duas requisições simultâneas fazem sem combinar nada.
+    """
+    pt_id = pt_com_trilha["pt"].id
+    db.commit()  # as outras conexões só enxergam a trilha depois disto
+
+    partida = threading.Barrier(2)
+    desfechos: list[str] = []
+    trava = threading.Lock()
+
+    def escrever(tipo: str) -> None:
+        sessao = SessionLocal()
+        # Snapshot congelado no primeiro statement, que é o `get` logo abaixo.
+        sessao.connection(execution_options={"isolation_level": "REPEATABLE READ"})
+        try:
+            pt = sessao.get(PermissaoTrabalho, pt_id)
+            partida.wait(timeout=15)
+            registrar_evento(
+                sessao, pt=pt, tipo_evento=tipo, ator=None, hash_documento="h"
+            )
+            sessao.commit()
+            resultado = "gravou"
+        except IntegrityError:
+            sessao.rollback()
+            resultado = "recusado"
+        finally:
+            sessao.close()
+        with trava:
+            desfechos.append(resultado)
+
+    fios = [
+        threading.Thread(target=escrever, args=(tipo,))
+        for tipo in ("pt.corrida.a", "pt.corrida.b")
+    ]
+    for fio in fios:
+        fio.start()
+    for fio in fios:
+        fio.join(timeout=30)
+        assert not fio.is_alive(), "escritor travou — a restrição não deve bloquear para sempre"
+
+    # Um grava, o outro leva IntegrityError. Os dois gravando seria a bifurcação.
+    assert sorted(desfechos) == ["gravou", "recusado"]
+
+    db.expire_all()
+    eventos = _eventos(db, pt_id)
+    assert len(eventos) == 3
+    assert verificar_cadeia(eventos, pt_com_trilha["pt"].uuid) == []

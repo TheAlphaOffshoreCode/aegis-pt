@@ -308,6 +308,20 @@ Deviations: `SUSPENSA` (only from `EM_EXECUCAO`) and `REJEITADA` (returns to `RA
 - **Pin `num_gpu` when the machine has more than one small GPU.** Ollama's automatic layer
   split across two 4 GB cards trips `GGML_ASSERT(n_inputs < GGML_SCHED_MAX_SPLIT_INPUTS)` and
   kills the runner. Left unset on a server whose card fits the model, its own choice is better.
+- **`AEGIS_DATABASE_URL` is the one `AEGIS_*` variable the suite reads with `setdefault`.** Every
+  other one is pinned, because a developer's `.env` leaking into the tests makes them assert what
+  that machine has. The database is different: the `.env` is still barred (pydantic reads it
+  after, never through `os.environ`), while exporting the variable in the shell is how the suite
+  runs against PostgreSQL. Both databases must stay green.
+- **Staging a write race needs `REPEATABLE READ`, not a barrier.** Under `READ COMMITTED` each
+  statement takes a fresh snapshot, so the second writer's re-read inside `registrar_evento`
+  already sees the first one's commit and there is no collision left to catch — the test passes
+  without testing. Opening the transaction with a read before the barrier freezes the snapshot,
+  and both writers genuinely race for the same link.
+- **A test that skips on one database must have a sibling that skips on the other.** The
+  `PRAGMA foreign_keys` check is meaningless on PostgreSQL and the concurrent-writer race is
+  unstageable on SQLite. One skip per database is symmetry; a skip with no counterpart is a
+  guarantee quietly going unproven on the engine that actually ships.
 
 ## Conventions
 

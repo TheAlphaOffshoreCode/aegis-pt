@@ -13,7 +13,7 @@ audit trail that survives an incident investigation.
 [![CI](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml/badge.svg)](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Status: L13 of L13 — complete](https://img.shields.io/badge/status-L13_of_L13_complete-22c55e.svg)](#roadmap)
-[![Tests: 272](https://img.shields.io/badge/tests-272_passing-22c55e.svg)](#tests)
+[![Tests: 273](https://img.shields.io/badge/tests-273_passing-22c55e.svg)](#tests)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Offline capable](https://img.shields.io/badge/PWA-offline_reads-0ea5e9.svg)](#offshore-constraints)
 
@@ -162,12 +162,19 @@ closing — and lists each link with its timestamp, actor role, state change and
 its hash. It loads only when opened: history is not what anyone reads to decide something now,
 and it is the longest answer this screen can ask for over a shipboard link.
 
+**PostgreSQL is no longer a claim.** The suite runs green on both databases, the migrations build
+the schema on a real server, and CI now runs a PostgreSQL job on every push alongside the SQLite
+matrix. That closed the oldest hole in the project: **P49** — the audit chain forking when two
+writers race for the same link — was fixed at L4 and never exercised where the defect exists,
+because SQLite serialises writers behind its file lock and hides the race entirely. There is now
+a test that stages the collision for real, with two connections on frozen snapshots; one commits,
+the other is refused by the `UNIQUE (pt_id, hash_anterior)`, and the chain still verifies.
+
 **What is still missing:** ingestion of the paper archive with OCR (proposed as its own loop —
 what it actually needs is a bulk import flow, not an OCR call), two product decisions listed in
-`LOOP_STATE.md`, and a run against PostgreSQL — every route now has a screen, but the database
-the code claims to be portable to has never actually run it. No
-penetration test has been run; this is a code and design audit by the person who wrote the code,
-and it is worth exactly what that is worth.
+`LOOP_STATE.md`, and a deployment: there is still no Dockerfile and nothing has run outside
+localhost. No penetration test has been run; this is a code and design audit by the person who
+wrote the code, and it is worth exactly what that is worth.
 
 ## The problem
 
@@ -236,10 +243,14 @@ Decisions that come from where this runs, not from taste:
   still needs to be consulted and a checklist still needs to be signed. Reads are cache-first and
   writes queue for sync — and a conflict on reconnect is presented for a human decision, never
   resolved by silently overwriting.
-- **No CDN, ever.** Charts and fonts will be vendored into the repository — an external request
-  is a blank screen on a bad link. The rule is binding from the start; the vendoring itself
-  happens when the real screens do, at L11–L12. Today the shell falls back to system fonts.
-- **SQLite in development, PostgreSQL in production, same code.** Only the URL changes.
+- **No CDN, ever.** An external request is a blank screen on a bad link. Oswald and JetBrains Mono
+  are vendored under `static/fonts/` with their OFL licence, and the CSP forbids an external
+  script outright.
+- **SQLite in development, PostgreSQL in production, same code.** Only the URL changes — and this
+  is verified rather than asserted: CI runs the whole suite against both, because the two
+  databases disagree in ways that decide correctness. SQLite stores no timezone offset (hence
+  `UTCDateTime` on every column) and serialises writers behind a file lock, which hides the
+  audit-chain race that only PostgreSQL can stage.
 - **Portuguese domain vocabulary.** The entities are named after the regulatory documents the
   platform enforces — NR-33, NR-34, NR-35, NR-10 — because a translated `work_permit` table is a
   translation error waiting to happen in an audit.
@@ -313,7 +324,20 @@ way to create accounts with a known password.
 python -m pytest -q
 ```
 
-Two hundred and seventy-two tests, none of which reach the network — the AI loop is exercised
+To run the same suite against PostgreSQL, point the URL at a server and run it again — that is
+the whole difference, and CI does exactly this on every push:
+
+```powershell
+$env:AEGIS_DATABASE_URL = "postgresql+psycopg://postgres:senha@127.0.0.1:5432/aegis_pt"
+python -m alembic upgrade head
+python -m pytest -q
+```
+
+One test skips on each database, and the pair is the point: the `PRAGMA foreign_keys` check is
+meaningless on PostgreSQL, where foreign keys are not optional, and the concurrent-writer race
+cannot be staged on SQLite, where the file lock serialises writers.
+
+Two hundred and seventy-three tests, none of which reach the network — the AI loop is exercised
 with an injected client, and the suite forces the API key, the local model URL and the model
 name to fixed values, so nothing in a developer's `.env` can make the tests call out, bill, or
 assert what that machine happens to have installed. The ones worth naming are those
@@ -349,6 +373,9 @@ that fail loudly the day a guarantee quietly stops holding:
 - an alert condition that disappears and comes back **reopens the same row** instead of
   crashing on the uniqueness of alert identity, and a real unhandled exception still carries
   every security header;
+- **two concurrent writers cannot fork the audit chain** — the race is staged for real on
+  PostgreSQL, on frozen snapshots so both read the same last link; one commits, the other is
+  refused by the database, and the chain still verifies;
 - SQLite foreign keys are actually enforced, and the migration is compared against the models
   and then rolled all the way back;
 - **two events cannot chain off the same link** — a `UNIQUE (pt_id, hash_anterior)` refuses the

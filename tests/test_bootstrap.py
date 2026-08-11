@@ -5,7 +5,7 @@ from pydantic import ValidationError
 from sqlalchemy import text
 
 from app.config import Settings
-from app.database import SessionLocal
+from app.database import SessionLocal, engine
 
 
 def test_health_responde_200(client):
@@ -30,6 +30,10 @@ def test_secret_key_curta_e_rejeitada():
         Settings(secret_key="curta")
 
 
+@pytest.mark.skipif(
+    engine.dialect.name != "sqlite",
+    reason="O PRAGMA é o mecanismo do SQLite; no PostgreSQL a chave estrangeira não é opcional.",
+)
 def test_foreign_keys_ativas_no_sqlite():
     """Sem o PRAGMA, o SQLite aceita referência órfã e o modelo mente sobre a integridade."""
     with SessionLocal() as db:
