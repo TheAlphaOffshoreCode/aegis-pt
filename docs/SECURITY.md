@@ -53,6 +53,55 @@ still **no token revocation list**: a leaked token is valid until it expires, at
 What it carries is only the identity — profile and posting are re-read on every request, so
 revoking a profile or deactivating an account takes effect immediately. See Findings.
 
+## Signing identity, separate from session identity
+
+Two credentials, because they answer different questions:
+
+| | Password (session) | PIN (signature) |
+|---|---|---|
+| Answers | what may this person **see** (rule 5) | who is **signing**, now (rule 6) |
+| Lifetime | one shift (480 min, configurable) | one act |
+| Stored as | `usuario.senha_hash`, Argon2id | `usuario.pin_hash`, Argon2id |
+| Rate limit | 5/min per origin and matrícula | **3/min**, same key |
+
+A deck tablet is shared. One person unlocks it and carries it all morning, while the welder,
+the safety technician and the coordinator each sign their own step on it. If authorship came
+from the token, every signature of the day would be recorded in the name of whoever unlocked
+the screen — the trail would state an authorship that never happened, which is precisely what
+it exists to prevent.
+
+So `POST /pts/{id}/transicoes` reads two identities. The **operator** is the bearer token: it
+decides which permits are readable at all. The **signer** is confirmed at that moment with
+matrícula and PIN, and is the name written into the `Assinatura` row and the audit event.
+
+Three properties hold this together:
+
+- **`transicao.assina` is the only condition.** The same question that decides whether to write
+  an `Assinatura` decides whether the PIN is required. A second list of states would drift.
+- **The rule engine evaluates the signer.** `executar_transicao` receives the confirmed user as
+  `ator`, so segregation of duties (rule 8) keeps working. Had it kept reading the token, the
+  requester could supply their own PIN and approve their own permit — the exact hole this
+  feature could have opened, and there is a test pinning it shut.
+- **The PIN is not a way around scope.** The signer must reach the permit's unit, exactly as
+  they would to read it. Otherwise opening a session on one unit would let someone sign a
+  document from another that they cannot even fetch.
+
+Wrong PIN, unknown matrícula, deactivated account and *person with no PIN at all* return the
+**same refusal**, with a throwaway Argon2 on the unknown-matrícula path so the timing does not
+answer either. The message stays actionable without becoming an oracle: it tells the reader to
+see the coordination if they have no PIN, which teaches nothing to someone probing other
+people's numbers.
+
+The tighter limit is deliberate. A 4-digit PIN has ten thousand combinations; at five attempts
+a minute a weekend exhausts it. Three a minute turns that into years without troubling anyone
+who mistyped with a wet glove.
+
+**A PIN is not a signature certificate.** It proves the person was present and consented at
+that moment, on that device; it is not cryptographic non-repudiation, and someone who watches
+another person type it can reuse it until it changes. What raises the cost of that is the audit
+trail: the event carries actor, timestamp, device, IP and document hash, and it is append-only.
+Real non-repudiation needs a per-person key or a certificate, which is a different project.
+
 ## Authorization
 
 L0 exposes only `/health`, `/` and `/static/*` — no user data on any of them.

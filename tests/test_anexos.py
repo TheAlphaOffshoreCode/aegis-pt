@@ -14,6 +14,7 @@ from app.config import get_settings
 from app.models import Anexo, Area, AuditEvent, ModeloPT, PermissaoTrabalho, Unidade, Usuario
 from app.models.enums import EstadoPT, PerfilUsuario, TipoTrabalho, TipoUnidade
 from app.models.tipos import agora_utc
+from tests.conftest import assinatura
 
 CONTEUDO = b"%PDF-1.4 conteudo de teste da analise preliminar de risco"
 
@@ -231,7 +232,7 @@ def test_anexo_nao_sai_depois_que_a_pt_circulou(
     assert client.post(
         f"/pts/{cenario['pt_id']}/transicoes",
         headers=cenario["cabecalho"],
-        json={"destino": "VALIDACAO"},
+        json={"destino": "VALIDACAO", **assinatura("70001")},
     ).status_code == 200
 
     resposta = client.delete(

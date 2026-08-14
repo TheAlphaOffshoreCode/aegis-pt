@@ -18,6 +18,7 @@ from app.models.tipos import agora_utc
 from app.security import limite
 from app.security.arquivos import confere
 from app.security.cabecalhos import CABECALHOS
+from tests.conftest import assinatura
 
 
 @pytest.fixture(autouse=True)
@@ -194,7 +195,7 @@ def test_assinar_documento_que_mudou_depois_da_leitura_e_recusado(
     resposta = client.post(
         f"/pts/{pt['id']}/transicoes",
         headers=pt_para_assinar["dono"],
-        json={"destino": "VALIDACAO", "visto_em": lido_em},
+        json={"destino": "VALIDACAO", "visto_em": lido_em, **assinatura("70001")},
     )
 
     assert resposta.status_code == 409
@@ -211,7 +212,7 @@ def test_assinar_sobre_a_leitura_atual_passa(
     resposta = client.post(
         f"/pts/{pt['id']}/transicoes",
         headers=pt_para_assinar["dono"],
-        json={"destino": "VALIDACAO", "visto_em": pt["atualizado_em"]},
+        json={"destino": "VALIDACAO", "visto_em": pt["atualizado_em"], **assinatura("70001")},
     )
 
     assert resposta.status_code == 200, resposta.text
@@ -226,7 +227,7 @@ def test_cliente_que_nao_informa_visto_em_continua_funcionando(
     resposta = client.post(
         f"/pts/{pt['id']}/transicoes",
         headers=pt_para_assinar["dono"],
-        json={"destino": "VALIDACAO"},
+        json={"destino": "VALIDACAO", **assinatura("70001")},
     )
 
     assert resposta.status_code == 200, resposta.text

@@ -28,6 +28,11 @@ HOJE = date.today()
 # senha conhecida é exatamente como uma credencial de teste chega à produção.
 SENHA_PADRAO = "aegis-dev-2026"
 
+# PIN de assinatura, também só para desenvolvimento. Na operação real cada pessoa recebe o seu
+# e ele nunca é igual ao de outra — um PIN compartilhado devolve o problema que a assinatura
+# individual existe para resolver.
+PIN_PADRAO = "2026"
+
 
 def _obter_ou_criar(db: Session, modelo: type, filtro: dict, **valores):
     """Devolve a linha que casa com `filtro`, ou cria uma com `filtro + valores`."""
@@ -106,14 +111,22 @@ def semear(db: Session) -> None:
             perfil=perfil,
             unidade_id=unidade.id,
             senha_hash=gerar_hash(SENHA_PADRAO),
+            pin_hash=gerar_hash(PIN_PADRAO),
         )
         for matricula, nome, email, empresa, cargo, perfil in pessoas
     }
     # `_obter_ou_criar` só aplica valores na criação, então uma base semeada antes do L2 fica
     # sem senha e sem lotação — logando ninguém e, quando loga, sem escopo para emitir PT.
+    #
+    # Terceira vez que uma coluna nova de `usuario` precisa deste reparo (senha, lotação, agora
+    # o PIN). O padrão já é conhecido: **toda coluna acrescentada a `usuario` depois da primeira
+    # semeadura precisa de uma linha aqui**, ou uma base que atravessou loops fica em silêncio
+    # com a forma antiga — e o sintoma aparece longe daqui, como "não consigo assinar".
     for usuario in usuarios.values():
         if not usuario.senha_hash:
             usuario.senha_hash = gerar_hash(SENHA_PADRAO)
+        if not usuario.pin_hash:
+            usuario.pin_hash = gerar_hash(PIN_PADRAO)
         if usuario.unidade_id is None:
             usuario.unidade_id = unidade.id
 
@@ -192,7 +205,8 @@ def main() -> None:
     print(
         "Seed aplicado: 1 unidade, 3 áreas, 5 usuários, 2 equipamentos, 4 certificações "
         "e 2 modelos de PT.\n"
-        f"Matrículas 10001 a 10005, senha '{SENHA_PADRAO}'."
+        f"Matrículas 10001 a 10005, senha '{SENHA_PADRAO}', "
+        f"PIN de assinatura '{PIN_PADRAO}'."
     )
 
 

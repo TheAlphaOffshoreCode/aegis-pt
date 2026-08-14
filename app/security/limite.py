@@ -102,6 +102,12 @@ LOGIN = Limitador(Limite(tentativas=5, janela_segundos=60))
 # folgado e corta o laço acidental de um cliente com defeito.
 IA = Limitador(Limite(tentativas=20, janela_segundos=60))
 
+# O PIN de assinatura é curto de propósito — quatro a seis dígitos numa luva molhada — e por
+# isso precisa de um limite mais apertado que a senha: o espaço de busca de um PIN de 4 dígitos
+# é dez mil, e cinco tentativas por minuto o esgotariam num fim de semana. Três por minuto e por
+# matrícula transformam isso em anos, sem atrapalhar quem simplesmente errou o dedo.
+ASSINATURA = Limitador(Limite(tentativas=3, janela_segundos=60))
+
 
 def chave_do_pedido(ip: str | None, identificador: str) -> str:
     """Chave por origem **e** por identidade.

@@ -29,6 +29,11 @@ class Usuario(TimestampMixin, Base):
     unidade_id: Mapped[int | None] = mapped_column(ForeignKey("unidade.id"), index=True)
     # Nunca a senha: só o hash Argon2. Vazio = usuário que ainda não pode entrar.
     senha_hash: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    # O PIN de assinatura, também só em hash. É a credencial que prova a autoria de uma
+    # assinatura no tablet compartilhado do convés: quem abriu a sessão não é necessariamente
+    # quem assina, e a trilha registra quem o PIN confirmou. Vazio = não assina — a pessoa
+    # navega e emite rascunho, mas não move a PT no fluxo.
+    pin_hash: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     ultimo_acesso: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
     certificacoes: Mapped[list["Certificacao"]] = relationship(

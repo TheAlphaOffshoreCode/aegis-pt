@@ -37,6 +37,19 @@ from app.models.pessoa import Usuario  # noqa: E402
 from app.security.credenciais import gerar_hash  # noqa: E402
 
 SENHA_DE_TESTE = "senha-de-teste-123"
+# O PIN de assinatura é a segunda credencial: a senha abre a sessão no aparelho, o PIN prova
+# quem está assinando agora. São diferentes nos testes de propósito — iguais, um teste passaria
+# mandando a senha no campo do PIN e ninguém veria.
+PIN_DE_TESTE = "4417"
+
+
+def assinatura(matricula: str, pin: str = PIN_DE_TESTE) -> dict[str, str]:
+    """Credencial de assinatura para o corpo de uma transição.
+
+    Existe para os testes dizerem **quem assina** em vez de repetir duas chaves em toda
+    chamada — e para que trocar a forma dessa credencial seja uma edição, não dezesseis.
+    """
+    return {"matricula": matricula, "pin": pin}
 
 
 @pytest.fixture(autouse=True)
@@ -86,6 +99,7 @@ def criar_usuario(db: Session) -> Callable[..., Usuario]:
             ativo=ativo,
             unidade_id=unidade_id,
             senha_hash=gerar_hash(SENHA_DE_TESTE),
+            pin_hash=gerar_hash(PIN_DE_TESTE),
         )
         db.add(usuario)
         db.commit()

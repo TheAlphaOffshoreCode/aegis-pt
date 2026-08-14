@@ -249,7 +249,13 @@ function telaLogin() {
   ]);
 
   return el("section", { class: "painel" }, [
-    el("h2", { texto: "Identificação" }),
+    el("h2", { texto: "Acessar o AEGIS PT" }),
+    // O que esta tela é, dito nela: acesso à plataforma. A identificação de **quem assina** é
+    // outra coisa e acontece adiante, na PT, no instante da assinatura. Confundir as duas fez
+    // esta tela parecer uma catraca de crachá em vez da porta do sistema.
+    el("p", { class: "pendencia", texto:
+      "Sua conta abre a plataforma e define o que você enxerga. Assinar uma etapa de PT pede, " +
+      "na hora, a identificação de quem assina — pode ser outra pessoa neste mesmo aparelho." }),
     destino,
     form,
   ]);
@@ -1264,6 +1270,94 @@ async function blocoDeEdicao(pt) {
   return bloco;
 }
 
+/** Envia a transição e recarrega a tela, ou mostra por que o servidor recusou. */
+async function enviarTransicao(pt, transicao, credencial, destino) {
+  try {
+    await api(`/pts/${pt.id}/transicoes`, {
+      method: "POST",
+      body: JSON.stringify({
+        destino: transicao.destino,
+        // O que esta tela mostrou. Se a PT mudou depois que ela carregou, o servidor recusa —
+        // assinar é declarar que se leu o documento.
+        visto_em: pt.atualizado_em,
+        ...credencial,
+      }),
+    });
+    rotear();
+  } catch (erro) {
+    destino.replaceChildren(aviso(erro.message, "erro", "Transição recusada"));
+  }
+}
+
+/** Pede quem está assinando, agora — não quem destravou o aparelho de manhã.
+ *
+ * Um formulário curto e no lugar, em vez de uma tela à parte: a assinatura acontece com a PT à
+ * vista, que é o documento sobre o qual a pessoa está declarando concordância. Mandar alguém
+ * para outra tela para digitar um PIN é tirar da frente exatamente o que ela deveria estar
+ * lendo.
+ */
+function identificacaoParaAssinar(pt, transicao, destino) {
+  // Os nomes são deliberadamente diferentes dos da tela de login, e o PIN se declara
+  // `one-time-code`. Com `name="matricula"` + um `type="password"` ao lado, o gerenciador do
+  // navegador reconhece o par como formulário de login e **preenche sozinho** com a conta da
+  // sessão — foi o que aconteceu na primeira versão desta tela. Num formulário de assinatura
+  // isso é grave: os campos chegam preenchidos com a identidade de outra pessoa, e assinar
+  // vira um clique distraído no nome errado. `autocomplete="off"` não basta, o Chrome o ignora
+  // em campo de senha.
+  const matricula = el("input", {
+    name: "assinante-matricula",
+    inputmode: "numeric",
+    autocomplete: "off",
+    required: "",
+  });
+  const pin = el("input", {
+    name: "assinante-pin",
+    type: "password",
+    inputmode: "numeric",
+    autocomplete: "one-time-code",
+    required: "",
+  });
+  // Rejeitar e suspender sem dizer por quê não deixam ninguém corrigir nada, e o servidor
+  // recusa (`motivo_obrigatorio`). O campo só aparece onde a regra existe.
+  const exigeMotivo = ["REJEITADA", "SUSPENSA"].includes(transicao.destino);
+  const motivo = el("textarea", { name: "motivo", rows: "2", required: "" });
+  const erro = el("div");
+
+  const form = el("form", {
+    onsubmit: (evento) => {
+      evento.preventDefault();
+      erro.replaceChildren();
+      const credencial = { matricula: matricula.value.trim(), pin: pin.value };
+      if (exigeMotivo) credencial.motivo = motivo.value.trim();
+      enviarTransicao(pt, transicao, credencial, destino);
+    },
+  }, [
+    el("p", { class: "pendencia", texto:
+      `Quem assina esta etapa como ${transicao.papel}? A assinatura fica registrada na trilha ` +
+      `no nome de quem se identificar aqui.` }),
+    el("label", {}, [el("span", { class: "rotulo", texto: "Matrícula" }), matricula]),
+    el("label", {}, [el("span", { class: "rotulo", texto: "PIN de assinatura" }), pin]),
+    ...(exigeMotivo
+      ? [el("label", {}, [el("span", { class: "rotulo", texto: "Motivo" }), motivo])]
+      : []),
+    el("div", { class: "acoes" }, [
+      el("button", { type: "submit", texto: `Assinar e mover para ${transicao.destino}` }),
+      el("button", {
+        type: "button",
+        class: "discreto",
+        texto: "Cancelar",
+        onclick: () => destino.replaceChildren(),
+      }),
+    ]),
+    erro,
+  ]);
+
+  return el("section", { class: "painel" }, [
+    el("h3", { texto: "Identificação de quem assina" }),
+    form,
+  ]);
+}
+
 async function blocoDeTransicoes(pt) {
   const bloco = el("section", { class: "painel" }, [el("h2", { texto: "Fluxo" })]);
   const destino = el("div");
@@ -1288,33 +1382,27 @@ async function blocoDeTransicoes(pt) {
     }
     const acoes = el("div", { class: "acoes" });
     for (const transicao of disponiveis) {
+      // Etapa que **assina** fica sempre disponível, mesmo que o perfil de quem está com o
+      // aparelho não seja o dela: quem assina é decidido no PIN, e o tablet do convés passa de
+      // mão em mão. Etapa administrativa (arquivar, devolver ao rascunho) continua presa ao
+      // perfil do operador, porque é ele quem a pratica.
+      const disponivel = transicao.assina || transicao.permitida;
       acoes.append(
         el("button", {
           class: "secundario",
           texto: transicao.destino,
-          // Etapa que o perfil não assina aparece desabilitada em vez de sumir: quem está a
-          // bordo precisa ver que a etapa existe e é de outra pessoa. O papel vai no rótulo
-          // acessível, não só num `title` — que não aparece em toque nenhum.
-          disabled: transicao.permitida ? null : "",
-          "aria-label": transicao.permitida
-            ? null
+          disabled: disponivel ? null : "",
+          // O papel vai no rótulo acessível, não só num `title` — que não aparece em toque.
+          "aria-label": disponivel
+            ? `${transicao.destino} — assina ${transicao.papel}`
             : `${transicao.destino} — etapa de ${transicao.papel}`,
-          onclick: async () => {
-            destino.replaceChildren();
-            try {
-              await api(`/pts/${pt.id}/transicoes`, {
-                method: "POST",
-                body: JSON.stringify({
-                  destino: transicao.destino,
-                  // O que esta tela mostrou. Se a PT mudou depois que ela carregou, o
-                  // servidor recusa — assinar é declarar que se leu o documento.
-                  visto_em: pt.atualizado_em,
-                }),
-              });
-              rotear();
-            } catch (erro) {
-              destino.replaceChildren(aviso(erro.message, "erro", "Transição recusada"));
-            }
+          onclick: () => {
+            destino.replaceChildren(
+              transicao.assina
+                ? identificacaoParaAssinar(pt, transicao, destino)
+                : el("p", { class: "vazio", texto: "Enviando…" })
+            );
+            if (!transicao.assina) enviarTransicao(pt, transicao, {}, destino);
           },
         })
       );

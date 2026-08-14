@@ -322,6 +322,35 @@ Deviations: `SUSPENSA` (only from `EM_EXECUCAO`) and `REJEITADA` (returns to `RA
   `PRAGMA foreign_keys` check is meaningless on PostgreSQL and the concurrent-writer race is
   unstageable on SQLite. One skip per database is symmetry; a skip with no counterpart is a
   guarantee quietly going unproven on the engine that actually ships.
+- **`migrations/env.py` turns `foreign_keys` OFF for SQLite, and back ON in a `finally`.** Batch
+  mode rebuilds a table by dropping the original, which the FK pragma refuses when something
+  references it — `audit_event` references itself. A failed batch leaves an `_alembic_tmp_*`
+  behind, and the next attempt dies with "table already exists", which says nothing about the
+  cause. The `finally` matters just as much: `tests/test_migration.py` runs Alembic **in the
+  pytest process on the same engine**, so a connection returned to the pool with the pragma off
+  silently disables `ON DELETE RESTRICT` on `audit_event` for whatever test picks it up next.
+- **Signing identity comes from the PIN, never from the token.** The token says what you may
+  *see* (rule 5); the PIN says who is *signing* (rule 6). A deck tablet is shared and the token
+  lasts a whole shift, so authorship taken from it is the authorship of whoever unlocked the
+  screen that morning. `transicao.assina` is the single condition that both creates an
+  `Assinatura` and demands the PIN — do not grow a second list of states.
+- **The rule engine evaluates the signer, not the operator.** `executar_transicao` receives the
+  PIN-confirmed user as `ator`, so segregation of duties (rule 8) keeps working. Had the engine
+  kept reading the token, the requester could hand over their own PIN and approve their own
+  permit — the exact hole the feature could have opened.
+- **The signing form must not look like a login form to the browser.** `name="matricula"` next
+  to a `type="password"` makes Chrome autofill both from the saved session account, so the
+  fields arrive holding *someone else's* identity and signing becomes a distracted click in the
+  wrong name. Use distinct names (`assinante-*`) and `autocomplete="one-time-code"` on the PIN;
+  `autocomplete="off"` is ignored on password fields.
+- **`[hidden]` needs `display: none !important` in the stylesheet.** The HTML attribute loses to
+  any author rule that sets `display`, so `nav.abas { display: flex }` kept the whole navigation
+  visible to logged-out users — clicking a tab bounced back to the login screen and looked like
+  a dead button. Author rules beat the user-agent stylesheet regardless of specificity.
+- **Every column added to `usuario` after the first seeding needs a repair pass in `semear()`.**
+  Three so far: senha, lotação, and now `pin_hash`. `_obter_ou_criar` only applies values on
+  creation, so a database that crossed loops keeps the old shape in silence and the symptom
+  surfaces far away — as "I can't sign".
 
 ## Conventions
 

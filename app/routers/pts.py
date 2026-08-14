@@ -14,7 +14,7 @@ from app.models.auditoria import AuditEvent
 from app.models.enums import EstadoPT, PerfilUsuario, TipoAnexo, TipoTrabalho
 from app.models.permissao import Anexo, ModeloPT, PermissaoTrabalho, PTVersao
 from app.models.pessoa import Usuario
-from app.rules.pendencias import bloqueiam
+from app.rules.pendencias import ConflitoDeNegocio, bloqueiam, bloqueio
 from app.schemas.auditoria import AuditEventRead, CompensacaoRequest, TrilhaRead
 from app.schemas.permissao import (
     AnexoRead,
@@ -30,6 +30,7 @@ from app.schemas.permissao import (
     TransicaoDisponivel,
     TransicaoRequest,
 )
+from app.security.assinante import assinante_alcanca, identificar_assinante
 from app.security.dependencias import exigir_perfis, usuario_atual
 from app.services import anexos, auditoria, dossie, permissoes
 from app.services.transicoes import executar_transicao, transicoes_disponiveis
@@ -167,17 +168,51 @@ def transicionar(
     dados: TransicaoRequest,
     request: Request,
     db: Session = Depends(get_db),
-    ator: Usuario = Depends(usuario_atual),
+    operador: Usuario = Depends(usuario_atual),
 ) -> PermissaoTrabalho:
-    """Move a PT de estado, assinando e registrando na trilha."""
+    """Move a PT de estado, assinando e registrando na trilha.
+
+    Duas identidades, de propósito. O **operador** é quem abriu a sessão no aparelho: é o
+    escopo dele que decide qual PT pode ser lida (regra 5). O **assinante** é quem prova a
+    identidade agora, com o PIN, e é o nome que vai para a assinatura e para a trilha.
+
+    Num tablet compartilhado eles quase nunca são a mesma pessoa, e tratá-los como um só era
+    registrar autoria falsa em documento que autoriza trabalho de risco.
+    """
+    pt = _pt_no_escopo(db, pt_id, operador)
+
+    ator = operador
+    autoria_confirmada = False
+    if dados.matricula and dados.pin:
+        ator = identificar_assinante(
+            db,
+            matricula=dados.matricula,
+            pin=dados.pin,
+            ip=request.client.host if request.client else None,
+        )
+        # O PIN não é atalho por fora do escopo: quem assina precisa alcançar a unidade da PT,
+        # como precisaria para simplesmente lê-la.
+        if not assinante_alcanca(ator, pt.unidade_id):
+            raise ConflitoDeNegocio(
+                [
+                    bloqueio(
+                        "assinante_fora_do_escopo",
+                        f"{ator.nome} não está lotado na unidade desta PT e não pode assiná-la",
+                        campo="matricula",
+                    )
+                ]
+            )
+        autoria_confirmada = True
+
     return executar_transicao(
         db,
-        _pt_no_escopo(db, pt_id, ator),
+        pt,
         dados.destino,
         ator,
         motivo=dados.motivo,
         visto_em=dados.visto_em,
         contexto=_contexto(request, dados.geolocalizacao),
+        autoria_confirmada=autoria_confirmada,
     )
 
 

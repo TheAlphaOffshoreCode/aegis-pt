@@ -93,8 +93,15 @@ def executar_transicao(
     motivo: str | None = None,
     visto_em: datetime | None = None,
     contexto: Contexto = Contexto(),
+    autoria_confirmada: bool = False,
 ) -> PermissaoTrabalho:
-    """Move a PT de estado, assinando, versionando e registrando na trilha."""
+    """Move a PT de estado, assinando, versionando e registrando na trilha.
+
+    `autoria_confirmada` diz se o `ator` provou ser quem é **agora**, com o PIN de assinatura, e
+    não apenas por carregar um token aberto vai saber quando. Um passo que assina exige essa
+    prova: o token vale um turno inteiro e o tablet é compartilhado, então autoria tirada dele
+    seria a autoria de quem destravou o aparelho de manhã.
+    """
     # Assinar é declarar que se leu o documento. Se ele mudou entre a leitura e a assinatura,
     # a assinatura seria sobre outra coisa — e o hash gravado na trilha registraria uma
     # concordância que nunca houve.
@@ -115,6 +122,18 @@ def executar_transicao(
 
     transicao = transicao_para(pt.estado, destino)
     pendencias = _impedimentos_de_ator(pt, ator, transicao)
+
+    # A mesma condição que decide gravar uma `Assinatura` decide exigir a prova de autoria.
+    # Amarrar as duas na mesma pergunta evita a segunda lista de estados que envelheceria
+    # sozinha — e é o passo que assina que vira prova numa investigação.
+    if transicao.assina and not autoria_confirmada:
+        pendencias.append(
+            bloqueio(
+                "assinatura_exige_identificacao",
+                "Assinar exige a identificação de quem assina: matrícula e PIN de assinatura",
+                campo="pin",
+            )
+        )
 
     # Rejeitar ou suspender sem dizer por quê não deixa ninguém corrigir nada, e é o registro
     # que a investigação de incidente vai procurar primeiro.

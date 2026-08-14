@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.models import Area, ModeloPT, PermissaoTrabalho, Unidade, Usuario
 from app.models.enums import EstadoPT, PerfilUsuario, TipoTrabalho, TipoUnidade
 from app.models.tipos import agora_utc
+from tests.conftest import PIN_DE_TESTE, assinatura
 
 
 @pytest.fixture
@@ -130,7 +131,9 @@ def test_dossie_reune_tudo_e_diz_se_a_trilha_esta_integra(
 ) -> None:
     pt_id = _buscar(client, cenario)["itens"][0]["id"]
     client.post(
-        f"/pts/{pt_id}/transicoes", headers=cenario["cabecalho"], json={"destino": "VALIDACAO"}
+        f"/pts/{pt_id}/transicoes",
+        headers=cenario["cabecalho"],
+        json={"destino": "VALIDACAO", **assinatura("70001")},
     )
 
     corpo = client.get(f"/pts/{pt_id}/dossie", headers=cenario["cabecalho"]).json()
@@ -191,11 +194,15 @@ def test_versoes_mostram_o_diff_entre_revisoes(
     pt_id = _buscar(client, cenario)["itens"][0]["id"]
     dono = cenario["cabecalho"]
 
-    client.post(f"/pts/{pt_id}/transicoes", headers=dono, json={"destino": "VALIDACAO"})
+    client.post(
+        f"/pts/{pt_id}/transicoes",
+        headers=dono,
+        json={"destino": "VALIDACAO", **assinatura("70001")},
+    )
     client.post(
         f"/pts/{pt_id}/transicoes",
         headers=autenticar("70003"),
-        json={"destino": "REJEITADA", "motivo": "Descrição vaga"},
+        json={"destino": "REJEITADA", "motivo": "Descrição vaga", "matricula": "70003", "pin": PIN_DE_TESTE},
     )
     client.post(f"/pts/{pt_id}/transicoes", headers=dono, json={"destino": "RASCUNHO"})
 
@@ -214,7 +221,11 @@ def test_versoes_mostram_o_diff_entre_revisoes(
             "visto_em": atual.atualizado_em.isoformat(),
         },
     )
-    client.post(f"/pts/{pt_id}/transicoes", headers=dono, json={"destino": "VALIDACAO"})
+    client.post(
+        f"/pts/{pt_id}/transicoes",
+        headers=dono,
+        json={"destino": "VALIDACAO", **assinatura("70001")},
+    )
 
     versoes = client.get(f"/pts/{pt_id}/versoes", headers=dono).json()
 

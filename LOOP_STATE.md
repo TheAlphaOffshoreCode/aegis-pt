@@ -27,6 +27,7 @@ Fonte de verdade para retomar o trabalho. Atualizado ao fim de cada loop.
 | — | Tela da IA: perguntar e propor rascunho | ✅ concluído | 2026-08-10 |
 | — | Dossiê, versões e correção da trilha na tela | ✅ concluído | 2026-08-11 |
 | — | PostgreSQL de verdade e a P49 exercitada | ✅ concluído | 2026-08-11 |
+| — | PIN de assinatura: autoria separada do acesso | ✅ concluído | 2026-08-11 |
 
 ---
 
@@ -1420,3 +1421,106 @@ badge com a suíte real; fica como P52.
 | P52 | O README envelhece em silêncio (três vezes). Um teste que confira o badge de contagem contra a suíte transformaria isso em falha em vez de vergonha | próximo trabalho |
 | P53 | Não há teste de carga nem de concorrência além do elo da trilha. Numeração de PT e sincronização de alertas também têm corrida possível, e agora existe banco onde encenar | quando pedirem |
 | P54 | O PostgreSQL usado foi um binário no diretório temporário desta máquina. Continua **sem Dockerfile** e sem execução fora do localhost | deploy |
+
+---
+
+## Identidade de quem assina, separada do acesso à plataforma (2026-08-11)
+
+**Entregue:** o PIN de assinatura. Entrar na plataforma dá acesso a tudo o que a pessoa enxerga;
+**assinar uma etapa pede matrícula e PIN na hora**, e é esse nome que vai para a assinatura e
+para a trilha. **285 testes** (12 novos), verde nos dois bancos.
+
+### De onde veio
+
+Do William, olhando a tela: *"a identificação de matrícula não devia ser a porta — devia ser
+uma tela lá dentro"*. O pedido original era identificação **sem senha**, e isso teria esvaziado
+a assinatura: quem soubesse a matrícula alheia assinaria no lugar dela, e a regra 8 evaporaria
+(emite com um número, aprova com outro). O que valia era a divisão que ele viu; o que faltava
+era a segunda etapa **confirmar** em vez de só perguntar.
+
+### O desenho: duas credenciais porque são duas perguntas
+
+- **O token** diz o que a pessoa pode *ver* (regra 5). Vale um turno inteiro.
+- **O PIN** diz quem está *assinando*, agora (regra 6). Vale um ato.
+
+Num tablet compartilhado eles quase nunca são a mesma pessoa. Tratá-los como um só era gravar
+autoria falsa em documento que autoriza trabalho de risco — todas as assinaturas do dia sairiam
+no nome de quem destravou a tela de manhã.
+
+Três decisões que sustentam isso:
+
+- **`transicao.assina` é a única condição.** A mesma pergunta que decide gravar uma `Assinatura`
+  decide exigir o PIN. Uma segunda lista de estados envelheceria sozinha.
+- **O motor de regras avalia o assinante, não o operador.** `executar_transicao` recebe o
+  usuário confirmado como `ator`. Se o motor continuasse lendo o token, o requisitante daria o
+  próprio PIN e aprovaria a própria PT — o buraco exato que o recurso poderia abrir.
+- **O PIN não é atalho por fora do escopo.** Quem assina precisa alcançar a unidade da PT, como
+  precisaria para lê-la.
+
+### Segurança
+
+Uma recusa só para matrícula inexistente, PIN errado, conta desativada e pessoa sem PIN — com
+Argon2 descartável no caminho da matrícula que não existe, senão o tempo de resposta diria quem
+assina a bordo. A mensagem orienta sem virar oráculo ("se você ainda não tem PIN, procure a
+coordenação"). Limite de **3 por minuto** por origem e matrícula, mais apertado que o da senha:
+quatro dígitos são dez mil combinações, e cinco por minuto as esgotariam num fim de semana.
+
+### Três defeitos encontrados no caminho, e nenhum era do recurso
+
+- **As migrations estavam quebradas no SQLite desde a P49.** `render_as_batch` recria a tabela
+  apagando a original, e o `PRAGMA foreign_keys=ON` recusa o DROP de `audit_event`, que
+  referencia a si mesma. A migração abortava deixando uma `_alembic_tmp_*`, e a tentativa
+  seguinte morria com "table already exists" — mensagem que não diz nada sobre a causa. O banco
+  de desenvolvimento estava **uma revisão atrás havia dias**, e ninguém tinha percebido porque
+  o PostgreSQL, que não usa batch, subia tudo.
+- **A correção quase virou um defeito pior.** Desligar o pragma na conexão fez
+  `tests/test_migration.py` — que roda o Alembic **dentro do processo do pytest, na mesma
+  engine** — devolver a conexão ao pool com a fiscalização desligada. O teste seguinte herdava,
+  e o `ON DELETE RESTRICT` de `audit_event`, que é a regra 4 no nível do esquema, deixou de
+  valer sem ninguém tocar nele. Religar num `finally` resolveu. **Foi um teste que já existia
+  que pegou** — o mesmo tipo de costura entre dois mecanismos que a varredura adversarial do L13
+  tinha catalogado.
+- **A tela oferecia REJEITADA e SUSPENSA sem nunca mandar `motivo`**, que o servidor exige desde
+  o L5. Os dois botões falhavam sempre. O campo entrou junto, e só onde a regra existe.
+
+### O defeito que só rodar de verdade pegou
+
+O formulário de assinatura chegava **preenchido pelo navegador** com a conta da sessão: com
+`name="matricula"` ao lado de um `type="password"`, o Chrome reconhece o par como login e
+autopreenche. Num formulário de assinatura isso é grave — os campos chegam com a identidade de
+outra pessoa e assinar vira um clique distraído no nome errado. Nomes distintos (`assinante-*`)
+e `autocomplete="one-time-code"`; `autocomplete="off"` é ignorado em campo de senha. Coberto por
+teste de contrato, porque é garantia que some numa refatoração.
+
+### Verificado contra a aplicação no ar
+
+Banco de desenvolvimento, sessão da **Ana (coordenadora, id 5)**:
+
+- assinar sem se identificar → **409 `assinatura_exige_identificacao`**;
+- PIN errado → **409**, mensagem uniforme;
+- **Carlos (requisitante, id 1) assinando no tablet da Ana** → 200, e a trilha registrou
+  `ator_id=1, perfil=requisitante`. A autoria não vazou do token;
+- 4ª tentativa de PIN → **429 com `Retry-After: 60`**;
+- cadeia da PT continua íntegra.
+
+### Arquivos tocados
+
+| Arquivo | Papel |
+|---|---|
+| `app/models/pessoa.py` + migration | `pin_hash`, com `server_default=""` — vazio é "ainda não assina" |
+| `app/security/assinante.py` | identificação, recusa uniforme e conferência de escopo |
+| `app/security/limite.py` | `ASSINATURA`, 3 por minuto |
+| `app/services/transicoes.py` | `autoria_confirmada`; exigido quando `transicao.assina` |
+| `app/routers/pts.py` | separa **operador** (escopo) de **assinante** (autoria) |
+| `app/seed.py` | PIN de desenvolvimento e o reparo — terceira coluna de `usuario` a precisar dele |
+| `migrations/env.py` | pragma desligado no batch e **religado no `finally`** |
+| `static/js/app.js` | entrada vira "Acessar o AEGIS PT"; identificação no ato de assinar; `motivo` |
+| `tests/test_assinatura.py` | 11 testes novos |
+
+### Pendências
+
+| # | Pendência | Destino |
+|---|---|---|
+| P55 | Não há tela para **atribuir ou trocar PIN**. Hoje ele nasce no seed; na operação real é cadastro, e trocar o próprio PIN é o mínimo | próximo trabalho |
+| P56 | O PIN não expira nem é forçado a mudar no primeiro uso. Num sistema real, PIN entregue por terceiro precisa de troca obrigatória | quando houver cadastro |
+| P57 | O limitador do PIN é em processo, como os outros — com vários workers o limite efetivo multiplica. Aqui dói mais que na senha, porque o espaço de busca é menor | junto com Redis |

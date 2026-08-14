@@ -225,6 +225,14 @@ class TransicaoRequest(BaseModel):
     # O navegador informa; o servidor registra como veio, sem inventar quando falta.
     geolocalizacao: str | None = Field(default=None, max_length=80)
 
+    # Quem assina, que pode não ser quem abriu a sessão — o tablet do convés passa de mão em
+    # mão. Opcionais no schema porque nem todo passo do fluxo assina (arquivar e devolver ao
+    # rascunho são atos administrativos); quem exige é o serviço, olhando `transicao.assina`,
+    # que é a mesma condição que decide criar a `Assinatura`. Uma regra só, sem uma segunda
+    # lista de estados para manter em dia.
+    matricula: str | None = Field(default=None, max_length=20)
+    pin: str | None = Field(default=None, min_length=4, max_length=32)
+
     @field_validator("visto_em")
     @classmethod
     def _em_utc(cls, valor: datetime | None) -> datetime | None:

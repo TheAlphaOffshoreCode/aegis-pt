@@ -17,6 +17,7 @@ from app.models import Area, AuditEvent, ModeloPT, PermissaoTrabalho, Unidade, U
 from app.models.auditoria import TrilhaImutavel
 from app.models.enums import EstadoPT, PerfilUsuario, TipoTrabalho, TipoUnidade
 from app.models.tipos import agora_utc
+from tests.conftest import PIN_DE_TESTE, assinatura
 
 
 @pytest.fixture
@@ -57,7 +58,9 @@ def pt_com_trilha(
         },
     ).json()
     client.post(
-        f"/pts/{pt['id']}/transicoes", headers=cabecalho, json={"destino": "VALIDACAO"}
+        f"/pts/{pt['id']}/transicoes",
+        headers=cabecalho,
+        json={"destino": "VALIDACAO", **assinatura("70001")},
     )
     db.expire_all()
     return {"pt": db.get(PermissaoTrabalho, pt["id"]), "cabecalho": cabecalho}
@@ -116,7 +119,7 @@ def test_apagar_um_evento_do_meio_quebra_o_elo(
     rejeicao = client.post(
         f"/pts/{pt.id}/transicoes",
         headers=autenticar("70003"),  # responsável de área é quem rejeita nesta etapa
-        json={"destino": "REJEITADA", "motivo": "Falta APR"},
+        json={"destino": "REJEITADA", "motivo": "Falta APR", **assinatura("70003")},
     )
     assert rejeicao.status_code == 200, rejeicao.text
     db.expire_all()
@@ -315,9 +318,11 @@ def test_editar_rascunho_deixa_rastro(
     rejeicao = client.post(
         f"/pts/{pt.id}/transicoes",
         headers=autenticar("70003"),
-        json={"destino": "REJEITADA", "motivo": "Refazer a APR"},
+        json={"destino": "REJEITADA", "motivo": "Refazer a APR", "matricula": "70003", "pin": PIN_DE_TESTE},
     )
     assert rejeicao.status_code == 200, rejeicao.text
+    # Sem credencial de assinatura de propósito: devolver ao rascunho é ato administrativo,
+    # não assina, e por isso o serviço não exige PIN. É o outro lado da regra.
     volta = client.post(
         f"/pts/{pt.id}/transicoes",
         headers=pt_com_trilha["cabecalho"],

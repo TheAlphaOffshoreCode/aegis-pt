@@ -29,6 +29,7 @@ from app.models.enums import (
     TipoUnidade,
 )
 from app.models.tipos import agora_utc
+from tests.conftest import PIN_DE_TESTE, assinatura
 
 # Requisitante, área, SMS, coordenação e execução — um por etapa do fluxo.
 ELENCO = {
@@ -110,11 +111,26 @@ def _montar(
 
 
 def _mover(
-    client: TestClient, headers: dict, pt_id: int, destino: EstadoPT, motivo: str | None = None
+    client: TestClient,
+    headers: dict,
+    pt_id: int,
+    destino: EstadoPT,
+    motivo: str | None = None,
+    *,
+    matricula: str | None = None,
+    pin: str = PIN_DE_TESTE,
 ):  # noqa: ANN201
+    """Uma transição. `headers` é quem opera o aparelho; `matricula` é quem assina.
+
+    Separados porque o produto os separa: num tablet compartilhado, quem destravou a tela
+    raramente é quem assina a etapa. Sem `matricula`, nenhuma credencial de assinatura vai no
+    corpo — que é como se testa a recusa de um passo que exige assinatura.
+    """
     corpo = {"destino": destino.value}
     if motivo:
         corpo["motivo"] = motivo
+    if matricula:
+        corpo |= assinatura(matricula, pin)
     return client.post(f"/pts/{pt_id}/transicoes", json=corpo, headers=headers)
 
 
@@ -137,7 +153,7 @@ def test_fluxo_completo_ate_execucao(
         ("70005", EstadoPT.EM_EXECUCAO),
     ]
     for matricula, destino in etapas:
-        resposta = _mover(client, autenticar(matricula), pt_id, destino)
+        resposta = _mover(client, autenticar(matricula), pt_id, destino, matricula=matricula)
         assert resposta.status_code == 200, f"{destino}: {resposta.text}"
         assert resposta.json()["estado"] == destino
 
@@ -168,9 +184,9 @@ def test_certificacao_vencida_impede_a_liberacao(
         ("70003", EstadoPT.APROVACAO),
         ("70004", EstadoPT.LIBERACAO),
     ]:
-        assert _mover(client, autenticar(matricula), pt_id, destino).status_code == 200
+        assert _mover(client, autenticar(matricula), pt_id, destino, matricula=matricula).status_code == 200
 
-    barrada = _mover(client, autenticar("70005"), pt_id, EstadoPT.EM_EXECUCAO)
+    barrada = _mover(client, autenticar("70005"), pt_id, EstadoPT.EM_EXECUCAO, matricula="70005")
 
     assert barrada.status_code == 409
     assert "certificacao_vencida" in _codigos(barrada)
@@ -187,10 +203,10 @@ def test_quem_emite_nao_aprova_a_propria_pt(
     cenario = _montar(db, criar_usuario, certificado_ate=date.today() + timedelta(days=400))
     pt_id = cenario["pt"].id
     dono = autenticar("70001")
-    assert _mover(client, dono, pt_id, EstadoPT.VALIDACAO).status_code == 200
+    assert _mover(client, dono, pt_id, EstadoPT.VALIDACAO, matricula="70001").status_code == 200
 
     # O próprio requisitante tentando validar a etapa seguinte.
-    recusada = _mover(client, dono, pt_id, EstadoPT.ANALISE_SMS)
+    recusada = _mover(client, dono, pt_id, EstadoPT.ANALISE_SMS, matricula="70001")
 
     assert recusada.status_code == 409
     assert "papel_incompativel_com_o_perfil" in _codigos(recusada)
@@ -202,9 +218,9 @@ def test_coordenador_nao_pula_a_analise_de_sms(
 ) -> None:
     cenario = _montar(db, criar_usuario, certificado_ate=date.today() + timedelta(days=400))
     pt_id = cenario["pt"].id
-    assert _mover(client, autenticar("70001"), pt_id, EstadoPT.VALIDACAO).status_code == 200
+    assert _mover(client, autenticar("70001"), pt_id, EstadoPT.VALIDACAO, matricula="70001").status_code == 200
 
-    pulo = _mover(client, autenticar("70004"), pt_id, EstadoPT.LIBERACAO)
+    pulo = _mover(client, autenticar("70004"), pt_id, EstadoPT.LIBERACAO, matricula="70004")
 
     assert pulo.status_code == 409
     assert "transicao_invalida" in _codigos(pulo)
@@ -216,23 +232,24 @@ def test_rejeicao_exige_motivo_e_devolve_ao_rascunho_gerando_versao_nova(
 ) -> None:
     cenario = _montar(db, criar_usuario, certificado_ate=date.today() + timedelta(days=400))
     pt_id = cenario["pt"].id
-    assert _mover(client, autenticar("70001"), pt_id, EstadoPT.VALIDACAO).status_code == 200
+    assert _mover(client, autenticar("70001"), pt_id, EstadoPT.VALIDACAO, matricula="70001").status_code == 200
 
-    sem_motivo = _mover(client, autenticar("70002"), pt_id, EstadoPT.REJEITADA)
+    sem_motivo = _mover(client, autenticar("70002"), pt_id, EstadoPT.REJEITADA, matricula="70002")
     assert sem_motivo.status_code == 409
     assert "motivo_obrigatorio" in _codigos(sem_motivo)
 
     com_motivo = _mover(
-        client, autenticar("70002"), pt_id, EstadoPT.REJEITADA, "Falta o plano de resgate"
+        client, autenticar("70002"), pt_id, EstadoPT.REJEITADA, "Falta o plano de resgate",
+        matricula="70002",
     )
     assert com_motivo.status_code == 200
 
     # Devolver ao rascunho é do requisitante, não de quem rejeitou.
-    de_terceiro = _mover(client, autenticar("70002"), pt_id, EstadoPT.RASCUNHO)
+    de_terceiro = _mover(client, autenticar("70002"), pt_id, EstadoPT.RASCUNHO, matricula="70002")
     assert de_terceiro.status_code == 409
 
-    assert _mover(client, autenticar("70001"), pt_id, EstadoPT.RASCUNHO).status_code == 200
-    assert _mover(client, autenticar("70001"), pt_id, EstadoPT.VALIDACAO).status_code == 200
+    assert _mover(client, autenticar("70001"), pt_id, EstadoPT.RASCUNHO, matricula="70001").status_code == 200
+    assert _mover(client, autenticar("70001"), pt_id, EstadoPT.VALIDACAO, matricula="70001").status_code == 200
 
     db.expire_all()
     versoes = db.scalars(select(PTVersao).where(PTVersao.pt_id == pt_id)).all()
@@ -247,8 +264,8 @@ def test_transicao_registra_ator_contexto_e_hash_em_cadeia(
     """Regra 6: nenhuma transição sem ator, momento, contexto e hash do documento."""
     cenario = _montar(db, criar_usuario, certificado_ate=date.today() + timedelta(days=400))
     pt_id = cenario["pt"].id
-    _mover(client, autenticar("70001"), pt_id, EstadoPT.VALIDACAO)
-    _mover(client, autenticar("70002"), pt_id, EstadoPT.ANALISE_SMS)
+    _mover(client, autenticar("70001"), pt_id, EstadoPT.VALIDACAO, matricula="70001")
+    _mover(client, autenticar("70002"), pt_id, EstadoPT.ANALISE_SMS, matricula="70002")
 
     eventos = db.scalars(
         select(AuditEvent).where(AuditEvent.pt_id == pt_id).order_by(AuditEvent.id)
@@ -293,12 +310,13 @@ def test_pt_em_execucao_e_suspensa_e_retomada(
         ("70003", EstadoPT.APROVACAO), ("70004", EstadoPT.LIBERACAO),
         ("70005", EstadoPT.EM_EXECUCAO),
     ]:
-        _mover(client, autenticar(matricula), pt_id, destino)
+        _mover(client, autenticar(matricula), pt_id, destino, matricula=matricula)
 
     suspensa = _mover(
-        client, autenticar("70003"), pt_id, EstadoPT.SUSPENSA, "Mudança nas condições de mar"
+        client, autenticar("70003"), pt_id, EstadoPT.SUSPENSA, "Mudança nas condições de mar",
+        matricula="70003",
     )
     assert suspensa.status_code == 200
     assert suspensa.json()["estado"] == EstadoPT.SUSPENSA
 
-    assert _mover(client, autenticar("70004"), pt_id, EstadoPT.EM_EXECUCAO).status_code == 200
+    assert _mover(client, autenticar("70004"), pt_id, EstadoPT.EM_EXECUCAO, matricula="70004").status_code == 200

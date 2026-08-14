@@ -78,6 +78,17 @@ code, .dado, .numero {
   font-variant-numeric: tabular-nums;
 }
 
+/* O `hidden` do HTML só vale enquanto ninguém der um `display` ao elemento: a regra do
+   user-agent perde para qualquer declaração do autor, por menor que seja a especificidade.
+   Sem esta linha, `nav.abas { display: flex }` e `.chip { display: inline-block }` deixavam
+   visíveis a barra de navegação de quem não fez login e o chip de fila vazio — e clicar numa
+   aba sem sessão voltava para o login, parecendo tela que não faz nada. É o único lugar do
+   projeto onde `!important` se justifica: `hidden` é uma afirmação sobre existência na tela,
+   não uma sugestão de estilo. */
+[hidden] {
+  display: none !important;
+}
+
 /* --- estrutura ------------------------------------------------------------------------ */
 
 .topo {

@@ -13,7 +13,7 @@ audit trail that survives an incident investigation.
 [![CI](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml/badge.svg)](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Status: L13 of L13 — complete](https://img.shields.io/badge/status-L13_of_L13_complete-22c55e.svg)](#roadmap)
-[![Tests: 273](https://img.shields.io/badge/tests-273_passing-22c55e.svg)](#tests)
+[![Tests: 285](https://img.shields.io/badge/tests-285_passing-22c55e.svg)](#tests)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Offline capable](https://img.shields.io/badge/PWA-offline_reads-0ea5e9.svg)](#offshore-constraints)
 
@@ -314,7 +314,13 @@ makes the scheduler complain instead of the board silently stopping.
 The seed creates one unit, three areas, five users, two pieces of equipment, two permit templates
 and four certifications — **one of them deliberately expired**, so the rule engine has a real case
 to block once L4 exists. Development accounts are matrículas `10001` to `10005`, password
-`aegis-dev-2026`. It refuses to run outside `environment=development`, and the guard sits inside
+`aegis-dev-2026`, signing PIN `2026`.
+
+Two credentials, because they answer different questions. The **password** opens the platform
+and decides what you can see. The **PIN** is asked at the moment of signing and decides whose
+name goes on the signature — a deck tablet is shared, so the person holding it is usually not
+the person signing that step. In real operation each person gets their own PIN; a shared one
+gives back exactly the problem an individual signature exists to solve. It refuses to run outside `environment=development`, and the guard sits inside
 the seeding function rather than only in `__main__`, because importing it is just as effective a
 way to create accounts with a known password.
 
@@ -328,16 +334,19 @@ To run the same suite against PostgreSQL, point the URL at a server and run it a
 the whole difference, and CI does exactly this on every push:
 
 ```powershell
-$env:AEGIS_DATABASE_URL = "postgresql+psycopg://postgres:senha@127.0.0.1:5432/aegis_pt"
+$env:AEGIS_DATABASE_URL = "postgresql+psycopg://postgres:senha@127.0.0.1:5432/aegis_testes"
 python -m alembic upgrade head
 python -m pytest -q
 ```
+
+**Give the suite its own database.** Every test creates the schema and drops it again, so
+pointing `AEGIS_DATABASE_URL` at a database that holds anything you care about deletes it.
 
 One test skips on each database, and the pair is the point: the `PRAGMA foreign_keys` check is
 meaningless on PostgreSQL, where foreign keys are not optional, and the concurrent-writer race
 cannot be staged on SQLite, where the file lock serialises writers.
 
-Two hundred and seventy-three tests, none of which reach the network — the AI loop is exercised
+Two hundred and eighty-five tests, none of which reach the network — the AI loop is exercised
 with an injected client, and the suite forces the API key, the local model URL and the model
 name to fixed values, so nothing in a developer's `.env` can make the tests call out, bill, or
 assert what that machine happens to have installed. The ones worth naming are those
@@ -368,6 +377,12 @@ that fail loudly the day a guarantee quietly stops holding:
   could come back in;
 - running the alert sync twice in the same minute opens nothing and escalates nothing, and an
   alert whose condition disappears is marked resolved rather than deleted;
+- **a signature is recorded in the name of whoever gave the PIN**, not whoever opened the
+  session — the tablet belongs to the coordinator and the area supervisor's signature comes
+  out as the area supervisor's, in both the signature row and the audit event;
+- the requester cannot hand over their own PIN to approve their own permit: segregation of
+  duties is evaluated against the signer, and a wrong PIN, an unknown matrícula, a disabled
+  account and a person with no PIN all answer **the same refusal**, three attempts a minute;
 - **an edit made offline never overwrites a change that arrived first** — the late write is
   refused, the earlier correction survives, and reloading is the way forward;
 - an alert condition that disappears and comes back **reopens the same row** instead of

@@ -168,6 +168,47 @@ def test_nenhum_recurso_externo_no_shell() -> None:
     assert "https://" not in html
 
 
+def test_o_formulario_de_assinatura_nao_e_autopreenchivel_pelo_navegador() -> None:
+    """Campo de assinatura que chega preenchido é assinatura no nome errado.
+
+    Com `name="matricula"` ao lado de um `type="password"`, o gerenciador do navegador
+    reconhece o par como formulário de login e preenche com a conta da sessão — e como quem
+    opera o aparelho quase nunca é quem assina, o valor oferecido é justamente o errado.
+    Aconteceu de verdade na primeira versão da tela, e `autocomplete="off"` não resolve:
+    o Chrome o ignora em campo de senha.
+    """
+    js = (ESTATICO / "js" / "app.js").read_text(encoding="utf-8")
+
+    assert 'name: "assinante-matricula"' in js and 'name: "assinante-pin"' in js, (
+        "os campos de assinatura voltaram a usar os mesmos nomes da tela de login"
+    )
+    assert 'autocomplete: "one-time-code"' in js, (
+        "o PIN precisa se declarar `one-time-code`, ou o navegador o trata como senha salva"
+    )
+
+
+def test_o_css_neutraliza_o_hidden_do_html() -> None:
+    """`hidden` é afirmação sobre existência na tela, e o CSS do autor vence o user-agent.
+
+    Sem uma regra explícita, `nav.abas { display: flex }` deixa a barra de navegação visível
+    para quem não fez login: clicar numa aba manda para `#/pts`, o roteador devolve para
+    `#/login`, e a tela parece não fazer nada. O mesmo acontecia com o chip de fila vazio.
+
+    Os dois elementos que nascem com `hidden` são conferidos por nome porque foi exatamente
+    a combinação `hidden` + `display` numa classe que passou despercebida no L12.
+    """
+    css = (ESTATICO / "css" / "aegis.css").read_text(encoding="utf-8")
+    html = (ESTATICO / "index.html").read_text(encoding="utf-8")
+
+    assert re.search(r"\[hidden\][^{]*\{[^}]*display:\s*none\s*!important", css), (
+        "falta `[hidden] { display: none !important }` — sem `!important` a regra perde para "
+        "qualquer seletor com classe que declare `display`"
+    )
+    # Se algum dia nenhum elemento nascer escondido, a regra acima vira código morto: este
+    # assert é o que avisa, em vez de deixar a garantia protegendo o vazio.
+    assert html.count("hidden") >= 2
+
+
 def _rota_generica(caminho: str) -> str:
     """`/pts/${pt.id}/pendencias` e `/pts/{pt_id}/pendencias` viram a mesma coisa.
 
