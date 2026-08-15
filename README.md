@@ -13,7 +13,7 @@ audit trail that survives an incident investigation.
 [![CI](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml/badge.svg)](https://github.com/TheAlphaOffshoreCode/aegis-pt/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Status: L13 of L13 — complete](https://img.shields.io/badge/status-L13_of_L13_complete-22c55e.svg)](#roadmap)
-[![Tests: 285](https://img.shields.io/badge/tests-285_passing-22c55e.svg)](#tests)
+[![Tests: 320](https://img.shields.io/badge/tests-320_passing-22c55e.svg)](#tests)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Offline capable](https://img.shields.io/badge/PWA-offline_reads-0ea5e9.svg)](#offshore-constraints)
 
@@ -319,8 +319,13 @@ to block once L4 exists. Development accounts are matrículas `10001` to `10005`
 Two credentials, because they answer different questions. The **password** opens the platform
 and decides what you can see. The **PIN** is asked at the moment of signing and decides whose
 name goes on the signature — a deck tablet is shared, so the person holding it is usually not
-the person signing that step. In real operation each person gets their own PIN; a shared one
-gives back exactly the problem an individual signature exists to solve. It refuses to run outside `environment=development`, and the guard sits inside
+the person signing that step. In real operation each person gets their own PIN, and there is
+now a screen for that: **minha conta** changes your own PIN and password, and coordination hands
+a PIN to whoever has none. A PIN delivered by someone else **cannot sign anything** until its
+owner changes it — which is what makes handing one over safe, because for the window in which two
+people know it, it opens nothing but its own replacement. The shared development PIN below is a
+development convenience and gives back exactly the problem an individual signature exists to
+solve. It refuses to run outside `environment=development`, and the guard sits inside
 the seeding function rather than only in `__main__`, because importing it is just as effective a
 way to create accounts with a known password.
 
@@ -346,7 +351,7 @@ One test skips on each database, and the pair is the point: the `PRAGMA foreign_
 meaningless on PostgreSQL, where foreign keys are not optional, and the concurrent-writer race
 cannot be staged on SQLite, where the file lock serialises writers.
 
-Two hundred and eighty-five tests, none of which reach the network — the AI loop is exercised
+Three hundred and twenty tests, none of which reach the network — the AI loop is exercised
 with an injected client, and the suite forces the API key, the local model URL and the model
 name to fixed values, so nothing in a developer's `.env` can make the tests call out, bill, or
 assert what that machine happens to have installed. The ones worth naming are those
@@ -383,6 +388,10 @@ that fail loudly the day a guarantee quietly stops holding:
 - the requester cannot hand over their own PIN to approve their own permit: segregation of
   duties is evaluated against the signer, and a wrong PIN, an unknown matrícula, a disabled
   account and a person with no PIN all answer **the same refusal**, three attempts a minute;
+- **a PIN handed over by coordination signs nothing until its owner changes it** — proven from
+  both sides, since neither the person who delivered it nor the person who received it can use
+  it, and the refusal deliberately costs no attempt against the rate limit, or obeying the
+  message three times would lock you out of obeying it;
 - **an edit made offline never overwrites a change that arrived first** — the late write is
   refused, the earlier correction survives, and reloading is the way forward;
 - an alert condition that disappears and comes back **reopens the same row** instead of
@@ -429,7 +438,10 @@ also how CI runs them, on 3.11 and 3.14.
 | --- | --- | --- |
 | `GET` | `/health` | Liveness plus a real `SELECT 1` against the database |
 | `POST` | `/auth/login` | Matrícula and password for a bearer token |
-| `GET` | `/auth/eu` | Who is authenticated, and which units they reach |
+| `GET` | `/auth/eu` | Who is authenticated, which units they reach, and the state of their PIN |
+| `POST` | `/auth/senha` · `/auth/pin` | Changes your own secret — the current one is required |
+| `GET` | `/usuarios` | The people you reach, and who still has no signing PIN |
+| `POST` | `/usuarios/{id}/pin` | Hands a PIN to someone; it cannot sign until they change it |
 | `GET` | `/areas` | Operational areas in scope — what the issue screen picks from |
 | `GET` | `/pts/modelos` | One active model per work type; the type selector's only source |
 | `GET` | `/pts/modelos/{tipo_trabalho}` | Form definition for a work type |

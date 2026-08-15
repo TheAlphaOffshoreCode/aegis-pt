@@ -34,7 +34,21 @@ class Usuario(TimestampMixin, Base):
     # quem assina, e a trilha registra quem o PIN confirmou. Vazio = não assina — a pessoa
     # navega e emite rascunho, mas não move a PT no fluxo.
     pin_hash: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    # PIN que veio de terceiro não assina antes de ser trocado. Enquanto isto for verdade, o
+    # PIN **não assina nada** — nem para quem o entregou. É o que torna a entrega segura: a
+    # coordenação atribui, conhece o valor por alguns minutos, e não consegue usá-lo, porque a
+    # única coisa que ele abre é a própria troca.
+    pin_precisa_troca: Mapped[bool] = mapped_column(default=False, nullable=False)
     ultimo_acesso: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+    @property
+    def tem_pin(self) -> bool:
+        """Se esta pessoa já pode assinar alguma coisa.
+
+        Deriva do hash em vez de virar coluna: duas fontes para o mesmo fato é como uma delas
+        fica velha. O que a tela mostra é isto, não o hash.
+        """
+        return bool(self.pin_hash)
 
     certificacoes: Mapped[list["Certificacao"]] = relationship(
         back_populates="usuario", cascade="all, delete-orphan"

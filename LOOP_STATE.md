@@ -28,6 +28,7 @@ Fonte de verdade para retomar o trabalho. Atualizado ao fim de cada loop.
 | — | Dossiê, versões e correção da trilha na tela | ✅ concluído | 2026-08-11 |
 | — | PostgreSQL de verdade e a P49 exercitada | ✅ concluído | 2026-08-11 |
 | — | PIN de assinatura: autoria separada do acesso | ✅ concluído | 2026-08-11 |
+| — | Credenciais na tela: trocar a própria, entregar a de outro (P55, P56) | ✅ concluído | 2026-08-14 |
 
 ---
 
@@ -1524,3 +1525,81 @@ Banco de desenvolvimento, sessão da **Ana (coordenadora, id 5)**:
 | P55 | Não há tela para **atribuir ou trocar PIN**. Hoje ele nasce no seed; na operação real é cadastro, e trocar o próprio PIN é o mínimo | próximo trabalho |
 | P56 | O PIN não expira nem é forçado a mudar no primeiro uso. Num sistema real, PIN entregue por terceiro precisa de troca obrigatória | quando houver cadastro |
 | P57 | O limitador do PIN é em processo, como os outros — com vários workers o limite efetivo multiplica. Aqui dói mais que na senha, porque o espaço de busca é menor | junto com Redis |
+
+---
+
+## Credenciais na tela: trocar a própria, entregar a de outro (2026-08-14)
+
+**Entregue:** o mínimo que tira o sistema do seed — trocar o próprio PIN e a própria senha, e
+coordenação/OIM entregando PIN a quem não tem. **P55 e P56 resolvidas.** Não é cadastro de
+pessoas: criar, desativar e mudar perfil ou lotação continuam fora (P58).
+**Aceite:** 320 testes (`320 passed, 1 skipped`), 35 novos. Contra a aplicação no ar: a
+coordenação atribuiu um PIN, **nem ela nem o dono conseguiram assinar com ele**, o dono trocou,
+a assinatura saiu no nome do assinante (ator 4, `area_responsavel`, com a sessão da coordenadora
+10005), a cadeia continuou íntegra e o PIN antigo morreu.
+
+### Arquivos tocados
+
+| Arquivo | Papel |
+|---|---|
+| `app/rules/segredos.py` | política de PIN e senha, pura e sem banco |
+| `app/services/contas.py` | trocar o próprio segredo, atribuir o de outro, escopo na consulta |
+| `app/routers/usuarios.py` | `GET /usuarios` e `POST /usuarios/{id}/pin` |
+| `app/routers/auth.py` | `POST /auth/senha` e `POST /auth/pin` |
+| `app/security/assinante.py` | recusa enquanto a troca está pendente, e a liberação antecipada |
+| `app/models/pessoa.py` | `pin_precisa_troca` e a propriedade derivada `tem_pin` |
+| `migrations/versions/be61b122016b_*.py` | a coluna, com `server_default` que o autogenerate omitiu |
+| `app/seed.py` | quarta coluna de `usuario` a precisar do reparo |
+| `static/index.html`, `static/js/app.js` | atalho no cabeçalho, tela `#/conta`, aviso persistente |
+| `tests/test_credenciais.py`, `tests/test_assinatura.py`, `tests/test_pwa.py` | 35 testes |
+
+### Decisões
+
+- **A janela entre entregar e trocar é o problema, e `pin_precisa_troca` é a resposta.** O
+  endpoint de atribuição não pode exigir o segredo antigo — é para quem não tem — então por um
+  tempo duas pessoas conhecem o PIN. O que torna a entrega segura é ele **não assinar nada**
+  nesse intervalo, nem para quem o entregou. A única coisa que ele abre é a própria substituição.
+- **Sem sexta aba.** Cinco é o teto em 390 px e a sexta empurraria o `SAIR` para fora — num
+  tablet compartilhado, sair é o que separa uma identidade da outra. A conta entrou como atalho
+  no cabeçalho.
+- **`tem_pin` é propriedade derivada do hash, não coluna.** Duas fontes para o mesmo fato é como
+  uma delas fica velha.
+- **A migration entra com `server_default=false` para quem já existe.** Verdadeiro seria o valor
+  paranoico — todo PIN anterior foi atribuído pelo seed — mas trancaria uma frota inteira por uma
+  inferência sobre um passado que a coluna não sabe contar.
+- **Não é cadastro de pessoas.** Perfil e lotação decidem escopo e quem assina o quê; mexer neles
+  é loop próprio, com trilha por mudança. Ficou como P58.
+
+### O defeito que só rodar de verdade pegou — de novo, e é o quarto
+
+A recusa `pin_precisa_troca` acontecia **depois** de `ASSINATURA.registrar`, e a rota de troca
+compartilha esse limitador de propósito (é o mesmo segredo). Resultado: três recusas de "troque
+o PIN" trancavam a troca por um minuto. **A tela mandava trocar e o servidor impedia de trocar.**
+
+A correção é de uma linha e de princípio: liberar o limitador assim que o segredo confere, antes
+de qualquer conferência de estado. Ele existe contra adivinhação, e quem acertou não estava
+adivinhando. Coberto por dois testes que se sustentam em par — um prova que a recusa por troca
+pendente não gasta tentativa, o outro que PIN errado continua gastando; sem o segundo, a correção
+poderia ter desarmado o limitador para todo mundo sem nada acusar.
+
+### O que o impeccable pegou, e o teste que nasceu dali
+
+O detector determinístico não achou nada. A conferência manual achou três: `div.cabecalho` e
+`chip alerta` são **nomes que a folha não tem**, e classe inexistente renderiza como se não
+estivesse lá — o chip de "sem PIN" saía com o mesmo peso do "ativo". A distinção existia só no
+meu código.
+
+Virou `test_toda_classe_usada_pela_tela_existe_na_folha`, provado nos dois sentidos. Vale mais
+aqui que em outro projeto: não há runner de JavaScript (P48), e esta é das poucas garantias de
+tela que a análise estática alcança.
+
+### Pendências
+
+| # | Pendência | Destino |
+|---|---|---|
+| ~~P55~~ | ~~Sem tela para atribuir ou trocar PIN~~ — `#/conta` e `/usuarios/{id}/pin` | resolvido em 14/08/2026 |
+| ~~P56~~ | ~~PIN entregue por terceiro sem troca obrigatória~~ — `pin_precisa_troca`, e enquanto durar ele não assina | resolvido em 14/08/2026 |
+| P57 | O limitador do PIN é em processo, como os outros — com vários workers o limite efetivo multiplica | junto com Redis |
+| P58 | **Cadastro de pessoas continua fora:** criar, desativar, trocar perfil e trocar lotação só pelo seed. Mexer em perfil é mexer em escopo e em quem assina o quê, e cada mudança dessas merece registro — esbarra em P26, porque evento sem PT não tem cadeia onde encadear | loop próprio |
+| P59 | Atribuir PIN **não entra em trilha nenhuma**, pela mesma razão que o login não entra (P16/P26). É um ato administrativo sobre a credencial de assinatura de outra pessoa, e é o tipo de registro que uma investigação procuraria | com P26 |
+| P60 | A política de PIN recusa a fatia previsível (sequência, dígito repetido, matrícula), não dá entropia. Quatro dígitos continuam sendo dez mil combinações, e quem defende é o limitador de 3/min — declarado em `docs/SECURITY.md` | aceito |

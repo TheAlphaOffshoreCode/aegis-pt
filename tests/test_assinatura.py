@@ -320,3 +320,118 @@ def test_a_senha_nao_serve_como_pin(
 
     assert resposta.status_code == 409
     assert resposta.json()["detail"][0]["codigo"] == "assinante_nao_confirmado"
+
+
+def test_pin_atribuido_pela_coordenacao_nao_assina_ate_ser_trocado(
+    client: TestClient, db: Session, cenario: dict,
+    autenticar: Callable[[str], dict[str, str]],
+) -> None:
+    """A janela entre entregar e trocar, fechada — e é o que torna a entrega segura.
+
+    Sem esta recusa o recurso teria criado o problema que veio resolver: a coordenação
+    atribuiria um PIN, o conheceria, e poderia assinar no nome da pessoa até ela trocá-lo.
+    Prendido nos dois sentidos: nem o dono nem quem entregou conseguem assinar antes da troca.
+    """
+    pt = cenario["pt"]
+    area = cenario["pessoas"]["area"]
+    coordenadora = autenticar("70004")
+
+    atribuir = client.post(
+        f"/usuarios/{area.id}/pin", json={"pin": "8362"}, headers=coordenadora
+    )
+    assert atribuir.status_code == 204, atribuir.text
+
+    # Quem entregou sabe o PIN e mesmo assim não assina com ele.
+    pela_coordenacao = _assinar(
+        client, pt.id, coordenadora, {"destino": "ANALISE_SMS", "matricula": "70002", "pin": "8362"}
+    )
+    assert pela_coordenacao.status_code == 409
+    assert pela_coordenacao.json()["detail"][0]["codigo"] == "pin_precisa_troca"
+
+    # E o dono também não, antes de trocar.
+    ASSINATURA._marcas.clear()
+    pelo_dono = _assinar(
+        client, pt.id, autenticar("70002"),
+        {"destino": "ANALISE_SMS", "matricula": "70002", "pin": "8362"},
+    )
+    assert pelo_dono.status_code == 409
+    assert pelo_dono.json()["detail"][0]["codigo"] == "pin_precisa_troca"
+
+    db.expire_all()
+    assert db.get(PermissaoTrabalho, pt.id).estado == EstadoPT.VALIDACAO
+
+
+def test_depois_de_trocar_o_pin_atribuido_a_assinatura_volta_a_valer(
+    client: TestClient, db: Session, cenario: dict,
+    autenticar: Callable[[str], dict[str, str]],
+) -> None:
+    """A prova pelo outro lado: a recusa é da troca pendente, não do PIN novo."""
+    pt = cenario["pt"]
+    area = cenario["pessoas"]["area"]
+
+    client.post(f"/usuarios/{area.id}/pin", json={"pin": "8362"}, headers=autenticar("70004"))
+
+    ASSINATURA._marcas.clear()
+    trocar = client.post(
+        "/auth/pin", json={"pin_atual": "8362", "pin_novo": "5074"}, headers=autenticar("70002")
+    )
+    assert trocar.status_code == 204, trocar.text
+
+    ASSINATURA._marcas.clear()
+    resposta = _assinar(
+        client, pt.id, autenticar("70004"),
+        {"destino": "ANALISE_SMS", "matricula": "70002", "pin": "5074"},
+    )
+
+    assert resposta.status_code == 200, resposta.text
+    db.expire_all()
+    assert db.get(PermissaoTrabalho, pt.id).estado == EstadoPT.ANALISE_SMS
+    assert not db.get(Usuario, area.id).pin_precisa_troca
+
+
+def test_recusa_por_troca_pendente_nao_gasta_o_limite_de_tentativas(
+    client: TestClient, cenario: dict, autenticar: Callable[[str], dict[str, str]],
+) -> None:
+    """Obedecer a mensagem não pode ser o que impede de obedecê-la.
+
+    A rota de troca compartilha este limitador de propósito — é o mesmo segredo. Se cada
+    recusa por "troque o PIN" contasse como tentativa, três toques no botão trancariam a troca
+    por um minuto e a pessoa ficaria presa entre uma tela que manda trocar e um servidor que
+    recusa. Encontrado rodando a aplicação, não pela suíte.
+    """
+    pt = cenario["pt"]
+    area = cenario["pessoas"]["area"]
+    coordenadora = autenticar("70004")
+
+    client.post(f"/usuarios/{area.id}/pin", json={"pin": "8362"}, headers=coordenadora)
+
+    corpo = {"destino": "ANALISE_SMS", "matricula": "70002", "pin": "8362"}
+    for _ in range(5):
+        recusa = _assinar(client, pt.id, coordenadora, corpo)
+        assert recusa.status_code == 409, recusa.text
+        assert recusa.json()["detail"][0]["codigo"] == "pin_precisa_troca"
+
+    # E a troca continua alcançável depois de todas elas.
+    trocou = client.post(
+        "/auth/pin", json={"pin_atual": "8362", "pin_novo": "5074"}, headers=autenticar("70002")
+    )
+    assert trocou.status_code == 204, trocou.text
+
+
+def test_pin_errado_continua_gastando_o_limite(
+    client: TestClient, cenario: dict, autenticar: Callable[[str], dict[str, str]],
+) -> None:
+    """A prova pelo outro lado: a liberação antecipada vale para quem acertou o segredo.
+
+    Sem este par, a correção acima poderia ter desarmado o limitador para todo mundo e nada
+    acusaria.
+    """
+    pt = cenario["pt"]
+    coordenadora = autenticar("70004")
+    corpo = {"destino": "ANALISE_SMS", "matricula": "70002", "pin": "0000"}
+
+    for _ in range(3):
+        assert _assinar(client, pt.id, coordenadora, corpo).status_code == 409
+
+    excedido = _assinar(client, pt.id, coordenadora, corpo)
+    assert excedido.status_code == 429

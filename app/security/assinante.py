@@ -54,7 +54,33 @@ def identificar_assinante(
     if not verificar_senha(pin, usuario.pin_hash):
         raise ConflitoDeNegocio([bloqueio("assinante_nao_confirmado", _RECUSA, campo="pin")])
 
+    # A partir daqui o segredo está provado, e o limitador não tem mais nada a proteger: ele
+    # existe contra adivinhação, e quem acertou não estava adivinhando. Liberar **antes** da
+    # conferência de estado não é detalhe de ordem — foi um defeito de verdade, encontrado
+    # rodando a aplicação. Com a liberação depois, cada recusa por "troque o PIN" contava como
+    # tentativa, e três delas trancavam a rota de troca por um minuto, porque ela compartilha
+    # este limitador de propósito. A tela mandava trocar e o servidor impedia de trocar.
     ASSINATURA.liberar(chave)
+
+    # Só depois de o PIN conferir, e é isso que permite a mensagem ser específica sem virar
+    # oráculo: quem chega aqui já provou saber o segredo, então nada lhe é revelado.
+    #
+    # E a recusa é o recurso, não um detalhe dele. Um PIN atribuído pela coordenação é conhecido
+    # por duas pessoas; enquanto o dono não o troca, ele não assina para **ninguém** — nem para
+    # quem o entregou. Sem esta recusa, a janela entre atribuir e trocar seria exatamente uma
+    # janela para assinar no nome do outro, que é o buraco que o PIN existe para fechar.
+    if usuario.pin_precisa_troca:
+        raise ConflitoDeNegocio(
+            [
+                bloqueio(
+                    "pin_precisa_troca",
+                    "Este PIN foi atribuído pela coordenação e precisa ser trocado antes da "
+                    "primeira assinatura.",
+                    campo="pin",
+                )
+            ]
+        )
+
     return usuario
 
 

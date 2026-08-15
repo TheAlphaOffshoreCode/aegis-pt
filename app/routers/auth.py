@@ -8,14 +8,21 @@ from app.config import get_settings
 from app.database import get_db
 from app.models.pessoa import Usuario
 from app.models.tipos import agora_utc
-from app.schemas.auth import LoginRequest, SessaoRead, TokenResponse
+from app.schemas.auth import (
+    LoginRequest,
+    SessaoRead,
+    TokenResponse,
+    TrocaPinRequest,
+    TrocaSenhaRequest,
+)
 from app.security.credenciais import (
     criar_token,
     gastar_tempo_de_verificacao,
     verificar_senha,
 )
 from app.security.dependencias import unidades_visiveis, usuario_atual
-from app.security.limite import LOGIN, chave_do_pedido
+from app.security.limite import ASSINATURA, LOGIN, chave_do_pedido
+from app.services import contas
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -25,11 +32,7 @@ def login(
     dados: LoginRequest, request: Request, db: Session = Depends(get_db)
 ) -> TokenResponse:
     """Troca matrícula e senha por um token de sessão."""
-    # Por origem e por matrícula: só por IP puniria a unidade inteira atrás de um NAT, e só
-    # por matrícula deixaria alguém varrer contas diferentes da mesma origem.
-    chave = chave_do_pedido(
-        None if request.client is None else request.client.host, dados.matricula
-    )
+    chave = _chave(request, dados.matricula)
     LOGIN.exigir(chave)
     LOGIN.registrar(chave)
 
@@ -68,7 +71,60 @@ def eu(usuario: Usuario = Depends(usuario_atual)) -> SessaoRead:
         perfil=usuario.perfil,
         unidade_id=usuario.unidade_id,
         unidades=None if alcance is None else sorted(alcance),
+        pin_precisa_troca=usuario.pin_precisa_troca,
+        tem_pin=usuario.tem_pin,
     )
+
+
+@router.post("/senha", status_code=status.HTTP_204_NO_CONTENT)
+def trocar_senha(
+    dados: TrocaSenhaRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(usuario_atual),
+) -> None:
+    """Troca a própria senha de sessão.
+
+    Vai atrás do mesmo limitador do login, e pela mesma razão: o campo `senha_atual` confere
+    uma senha, então sem limite ele seria um oráculo de senha com um token válido na mão.
+    """
+    chave = _chave(request, usuario.matricula)
+    LOGIN.exigir(chave)
+    LOGIN.registrar(chave)
+    contas.trocar_senha(
+        db, usuario, senha_atual=dados.senha_atual, senha_nova=dados.senha_nova
+    )
+    LOGIN.liberar(chave)
+
+
+@router.post("/pin", status_code=status.HTTP_204_NO_CONTENT)
+def trocar_pin(
+    dados: TrocaPinRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(usuario_atual),
+) -> None:
+    """Troca o próprio PIN de assinatura.
+
+    É o único caminho que funciona com `pin_precisa_troca` ligado — de propósito: o PIN que a
+    coordenação entrega abre apenas a própria substituição.
+    """
+    chave = _chave(request, usuario.matricula)
+    # O mesmo limitador da assinatura, porque é o mesmo segredo sendo adivinhado. Contagem
+    # separada aqui daria ao atacante um segundo balcão para tentar o mesmo PIN.
+    ASSINATURA.exigir(chave)
+    ASSINATURA.registrar(chave)
+    contas.trocar_pin(db, usuario, pin_atual=dados.pin_atual, pin_novo=dados.pin_novo)
+    ASSINATURA.liberar(chave)
+
+
+def _chave(request: Request, matricula: str) -> str:
+    """Chave do limitador: por origem **e** por identidade.
+
+    Só por IP puniria a unidade inteira atrás de um NAT; só por matrícula deixaria alguém varrer
+    contas diferentes da mesma origem. As três rotas com limite usam esta mesma chave.
+    """
+    return chave_do_pedido(None if request.client is None else request.client.host, matricula)
 
 
 def _credencial_invalida() -> HTTPException:

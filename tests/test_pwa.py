@@ -335,3 +335,31 @@ def test_todo_caminho_chamado_pela_tela_existe_na_api(client: TestClient) -> Non
 
     assert len(chamados) >= 8, f"só {len(chamados)} caminhos casaram — regex quebrado?"
     assert chamados <= rotas, f"a tela chama o que a API não tem: {sorted(chamados - rotas)}"
+
+
+def test_toda_classe_usada_pela_tela_existe_na_folha() -> None:
+    """Classe inventada não quebra nada — renderiza como se não estivesse lá.
+
+    Foi assim que a lista de PIN da equipe nasceu com `chip alerta` e `div.cabecalho`, dois
+    nomes que a folha não tem: o chip de "sem PIN" saía com o mesmo peso visual do "ativo", e
+    a distinção existia só no código de quem escreveu. É o pior modo de falhar de uma tela de
+    segurança, porque não há erro nenhum — só informação que deixou de ser transmitida.
+
+    Vale mais aqui do que valeria em outro projeto: não existe runner de JavaScript (P48), e
+    esta é uma das poucas garantias de tela que a análise estática alcança.
+    """
+    js = (ESTATICO / "js" / "app.js").read_text(encoding="utf-8")
+    html = (ESTATICO / "index.html").read_text(encoding="utf-8")
+    css = (ESTATICO / "css" / "aegis.css").read_text(encoding="utf-8")
+
+    definidas = set(re.findall(r"\.([a-z][a-z0-9-]*)", css))
+
+    usadas: set[str] = set()
+    # Só literais: `class: variavel` fica de fora porque não há o que conferir sem rodar.
+    for valor in re.findall(r"""class(?:Name)?[:=]\s*[`"']([^`"'{}$]+)[`"']""", js):
+        usadas |= set(valor.split())
+    for valor in re.findall(r'class="([^"]+)"', html):
+        usadas |= set(valor.split())
+
+    assert len(usadas) >= 20, f"só {len(usadas)} classes casaram — regex quebrado?"
+    assert not usadas - definidas, f"a tela usa classe que a folha não tem: {sorted(usadas - definidas)}"

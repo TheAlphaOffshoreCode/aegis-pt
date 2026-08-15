@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 import logging
 
 from app.config import get_settings
-from app.routers import ai, auth, health, indicadores, organizacao, pts
+from app.routers import ai, auth, health, indicadores, organizacao, pts, usuarios
 from app.rules.pendencias import ConflitoDeNegocio
 from app.security.cabecalhos import CABECALHOS, CabecalhosDeSeguranca
 
@@ -82,6 +82,7 @@ app.include_router(pts.router)
 app.include_router(ai.router)
 app.include_router(indicadores.router)
 app.include_router(organizacao.router)
+app.include_router(usuarios.router)
 
 # O navegador precisa **perguntar** antes de reusar um arquivo do shell. Sem `Cache-Control`, o
 # Starlette manda só `ETag` e `Last-Modified`, e aí vale a heurística: o Chrome reusa um arquivo

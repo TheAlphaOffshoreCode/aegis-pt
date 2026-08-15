@@ -78,7 +78,7 @@ Layering is strict, and the split is the point of the design:
 | `app/workflow/` | the permit state machine and its transitions |
 | `app/audit/` | append-only trail, `hash_evento = H(hash_anterior + payload)`, chain verifier |
 | `app/ai/` | the only place the model is reached; read-only tools, scope applied before the call |
-| `app/security/` | auth, RBAC, hashing |
+| `app/security/` | auth, RBAC, hashing, signer identification |
 
 A rule that leaks into a router is a defect, even when the tests pass.
 
@@ -347,10 +347,27 @@ Deviations: `SUSPENSA` (only from `EM_EXECUCAO`) and `REJEITADA` (returns to `RA
   any author rule that sets `display`, so `nav.abas { display: flex }` kept the whole navigation
   visible to logged-out users — clicking a tab bounced back to the login screen and looked like
   a dead button. Author rules beat the user-agent stylesheet regardless of specificity.
+- **An assigned PIN must not be able to sign.** `POST /usuarios/{id}/pin` cannot ask for the old
+  secret — it exists for people who have none — so for a while two people know the PIN. What
+  makes that safe is `pin_precisa_troca`: while it holds, `identificar_assinante` refuses every
+  signature, for the owner and the deliverer alike, and the PIN opens only its own replacement.
+  Remove the flag check and the feature starts creating the forgery it was built to prevent.
+- **Release the rate limiter as soon as the secret verifies, before any state check.** The
+  limiter guards against guessing; a correct PIN is not a guess. With the release left at the
+  end, every `pin_precisa_troca` refusal burned one of the three attempts a minute that
+  `POST /auth/pin` shares — so following the "change your PIN" message three times locked the
+  person out of changing it. Found by running the app, not by the suite.
+- **A CSS class the stylesheet does not define renders as if it were not there.** `chip alerta`
+  and `div.cabecalho` were invented names: the "sem PIN" chip came out with the same weight as
+  "ativo", and the distinction existed only in the author's head. Nothing errors, so nothing
+  catches it except `test_toda_classe_usada_pela_tela_existe_na_folha`. Check the sheet before
+  inventing a modifier, and keep the state in the chip's *text* — colour only reinforces.
 - **Every column added to `usuario` after the first seeding needs a repair pass in `semear()`.**
-  Three so far: senha, lotação, and now `pin_hash`. `_obter_ou_criar` only applies values on
-  creation, so a database that crossed loops keeps the old shape in silence and the symptom
-  surfaces far away — as "I can't sign".
+  Four so far: senha, lotação, `pin_hash`, and `pin_precisa_troca`. `_obter_ou_criar` only
+  applies values on creation, so a database that crossed loops keeps the old shape in silence
+  and the symptom surfaces far away — as "I can't sign". The fourth is not symmetry for its own
+  sake: exercising `POST /usuarios/{id}/pin` against the dev database leaves the seeded PIN
+  marked for change, and re-seeding is how you get back to the documented state.
 
 ## Conventions
 

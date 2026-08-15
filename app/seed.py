@@ -127,6 +127,12 @@ def semear(db: Session) -> None:
             usuario.senha_hash = gerar_hash(SENHA_PADRAO)
         if not usuario.pin_hash:
             usuario.pin_hash = gerar_hash(PIN_PADRAO)
+        # Quarta coluna a precisar do reparo. Aqui ele não é só simetria: quem exercitou
+        # `POST /usuarios/{id}/pin` contra a base de desenvolvimento deixou o PIN marcado para
+        # troca, e a partir daí `PIN_PADRAO` não assina mais nada. Ressemear é como se volta ao
+        # estado documentado, então é aqui que a marca cai.
+        if usuario.pin_precisa_troca:
+            usuario.pin_precisa_troca = False
         if usuario.unidade_id is None:
             usuario.unidade_id = unidade.id
 

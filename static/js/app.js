@@ -1488,12 +1488,185 @@ function sair() {
   location.hash = "#/login";
 }
 
+/* --- minha conta ----------------------------------------------------------------------- */
+
+/** Um formulário de dois segredos: confere o atual, define o novo. */
+function formularioDeSegredo({ titulo, rotuloAtual, rotuloNovo, caminho, chaves, aoTrocar }) {
+  const atual = el("input", { type: "password", inputmode: "numeric", required: "" });
+  const novo = el("input", { type: "password", inputmode: "numeric", required: "" });
+  const destino = el("div");
+
+  return el("form", {
+    onsubmit: async (evento) => {
+      evento.preventDefault();
+      destino.replaceChildren();
+      try {
+        await api(caminho, {
+          method: "POST",
+          body: JSON.stringify({ [chaves[0]]: atual.value, [chaves[1]]: novo.value }),
+        });
+        atual.value = novo.value = "";
+        destino.append(aviso("Alterado.", "ok", titulo));
+        await aoTrocar?.();
+      } catch (erro) {
+        destino.append(aviso(erro.message, "erro", "Não foi possível alterar"));
+      }
+    },
+  }, [
+    el("label", {}, [el("span", { class: "rotulo", texto: rotuloAtual }), atual]),
+    el("label", {}, [el("span", { class: "rotulo", texto: rotuloNovo }), novo]),
+    el("div", { class: "acoes" }, [el("button", { type: "submit", texto: titulo })]),
+    destino,
+  ]);
+}
+
+/** A lista de quem a coordenação alcança, para entregar PIN a quem não tem. */
+function blocoDeAtribuicao(pessoas) {
+  const bloco = el("section", { class: "painel" }, [
+    el("h2", { texto: "PIN da equipe" }),
+    nota(
+      "entrega",
+      "O PIN que você define aqui não assina nada: a pessoa é obrigada a trocá-lo antes " +
+      "da primeira assinatura. É isso que permite entregá-lo sem virar assinatura no nome dela.",
+    ),
+  ]);
+
+  for (const pessoa of pessoas) {
+    const destino = el("div");
+    // As três variantes existem na folha (`atencao`, `bloqueante`, chip liso). Um nome de
+    // classe inventado renderiza igual ao chip normal, e aí a distinção só existiria no meu
+    // código: quem olha a lista veria "sem PIN" com o mesmo peso de "ativo". O texto do chip
+    // carrega o estado por escrito, e a cor só reforça — no sol do convés é o texto que resta.
+    const estado = !pessoa.tem_pin
+      ? { texto: "sem PIN", classe: "chip atencao" }
+      : pessoa.pin_precisa_troca
+        ? { texto: "troca pendente", classe: "chip bloqueante" }
+        : { texto: "ativo", classe: "chip" };
+
+    const campo = el("input", { type: "password", inputmode: "numeric", required: "" });
+    const form = el("form", {
+      hidden: "",
+      onsubmit: async (evento) => {
+        evento.preventDefault();
+        destino.replaceChildren();
+        try {
+          await api(`/usuarios/${pessoa.id}/pin`, {
+            method: "POST",
+            body: JSON.stringify({ pin: campo.value }),
+          });
+          campo.value = "";
+          rotear();
+        } catch (erro) {
+          destino.append(aviso(erro.message, "erro", "PIN não definido"));
+        }
+      },
+    }, [
+      el("label", {}, [el("span", { class: "rotulo", texto: "PIN novo" }), campo]),
+      el("div", { class: "acoes" }, [el("button", { type: "submit", texto: "Definir" })]),
+    ]);
+
+    bloco.append(el("article", { class: "cartao" }, [
+      el("div", { class: "cabeca" }, [
+        el("span", { class: "numero", texto: pessoa.nome }),
+        el("span", { class: estado.classe, texto: estado.texto }),
+      ]),
+      linha("Matrícula", pessoa.matricula),
+      linha("Perfil", pessoa.perfil),
+      el("div", { class: "acoes" }, [
+        el("button", {
+          type: "button",
+          class: "discreto",
+          texto: pessoa.tem_pin ? "Redefinir PIN" : "Definir PIN",
+          onclick: () => { form.hidden = !form.hidden; },
+        }),
+      ]),
+      form,
+      destino,
+    ]));
+  }
+  return bloco;
+}
+
+async function telaConta() {
+  const eu = API.usuario ?? (await api("/auth/eu"));
+  const tela = el("div", {}, [
+    el("section", { class: "painel" }, [
+      el("h2", { texto: "Minha conta" }),
+      linha("Nome", eu.nome),
+      linha("Matrícula", eu.matricula),
+      linha("Perfil", eu.perfil),
+      nota(
+        "duas credenciais",
+        "A senha abre a plataforma e vale o turno. O PIN prova quem assina e vale um ato — " +
+        "num tablet compartilhado, quase nunca são a mesma pessoa.",
+      ),
+    ]),
+  ]);
+
+  if (eu.pin_precisa_troca) {
+    tela.prepend(aviso(
+      "Este PIN foi entregue pela coordenação e ainda não assina nada. Troque-o abaixo antes " +
+      "de precisar dele com uma PT aberta.",
+      "erro",
+      "Troque seu PIN de assinatura",
+    ));
+  } else if (!eu.tem_pin) {
+    tela.prepend(aviso(
+      "Você ainda não tem PIN de assinatura: dá para consultar e emitir rascunho, mas não " +
+      "assinar etapa de PT. Peça um à coordenação da unidade.",
+      // Sem variante: o `.aviso` liso já é a tarja âmbar de atenção. `alerta` não existe na
+      // folha e cairia neste mesmo estilo por acidente, o que é pior — parece intencional.
+      "",
+      "Sem PIN de assinatura",
+    ));
+  }
+
+  // Só quem tem PIN troca PIN: sem um atual para conferir, o formulário só teria como falhar.
+  if (eu.tem_pin) {
+    tela.append(el("section", { class: "painel" }, [
+      el("h2", { texto: "PIN de assinatura" }),
+      formularioDeSegredo({
+        titulo: "Trocar PIN",
+        rotuloAtual: "PIN atual",
+        rotuloNovo: "PIN novo",
+        caminho: "/auth/pin",
+        chaves: ["pin_atual", "pin_novo"],
+        // A sessão carrega `pin_precisa_troca`; sem recarregá-la, o alerta continuaria na tela
+        // depois de resolvido e a pessoa não saberia se a troca pegou.
+        aoTrocar: async () => { API.usuario = null; rotear(); },
+      }),
+    ]));
+  }
+
+  tela.append(el("section", { class: "painel" }, [
+    el("h2", { texto: "Senha de acesso" }),
+    formularioDeSegredo({
+      titulo: "Trocar senha",
+      rotuloAtual: "Senha atual",
+      rotuloNovo: "Senha nova",
+      caminho: "/auth/senha",
+      chaves: ["senha_atual", "senha_nova"],
+    }),
+  ]));
+
+  if (["coordenador", "oim", "admin"].includes(eu.perfil)) {
+    // Falha em silêncio de propósito, como o resto da tela: o servidor é quem decide, e um 403
+    // aqui só significa que este perfil não entrega PIN.
+    const pessoas = await api("/usuarios").catch(() => null);
+    if (pessoas) tela.append(blocoDeAtribuicao(pessoas));
+  }
+
+  return tela;
+}
+
 async function rotear() {
   const bruto = location.hash.slice(2) || (API.token ? "pts" : "login");
   const [caminho, parametros = ""] = bruto.split("?");
   const partes = caminho.split("/");
 
   abas.hidden = !API.token;
+  const atalhoDaConta = document.getElementById("conta");
+  atalhoDaConta.hidden = !API.token;
   for (const link of abas.querySelectorAll("a")) {
     link.classList.toggle("ativa", link.getAttribute("href") === `#/${partes[0]}`);
   }
@@ -1520,6 +1693,7 @@ async function rotear() {
   try {
     if (partes[0] === "sair") return sair();
     if (partes[0] === "login") conteudo = telaLogin();
+    else if (partes[0] === "conta") conteudo = await telaConta();
     else if (partes[0] === "nova") conteudo = await telaNova();
     else if (partes[0] === "ia") conteudo = await telaIA();
     else if (partes[0] === "pt") conteudo = await telaDetalhe(partes[1]);
@@ -1528,7 +1702,24 @@ async function rotear() {
   } catch (erro) {
     conteudo = aviso(erro.message, "erro", "Falha inesperada");
   }
-  tela.replaceChildren(conteudo);
+
+  // O aviso segue a pessoa até ela resolver, em vez de esperar a recusa. Descobrir que o PIN
+  // precisa de troca no instante da assinatura é descobrir com a PT aberta e o serviço parado
+  // esperando — e é o momento em que ninguém quer ler instrução de sistema.
+  // `replaceChildren` converte `null` em texto: um filho nulo viraria a palavra "null" impressa
+  // na tela. Por isso a lista é filtrada antes, e não montada com um ternário lá dentro.
+  const partesDaTela = [
+    API.usuario?.pin_precisa_troca && partes[0] !== "conta"
+      ? aviso(
+          "Seu PIN foi entregue pela coordenação e ainda não assina. Abra “minha conta” e " +
+          "troque antes de precisar assinar.",
+          "erro",
+          "PIN pendente de troca",
+        )
+      : null,
+    conteudo,
+  ].filter(Boolean);
+  tela.replaceChildren(...partesDaTela);
 }
 
 window.addEventListener("hashchange", rotear);

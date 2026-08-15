@@ -96,6 +96,33 @@ The tighter limit is deliberate. A 4-digit PIN has ten thousand combinations; at
 a minute a weekend exhausts it. Three a minute turns that into years without troubling anyone
 who mistyped with a wet glove.
 
+### Handing a PIN over
+
+Coordination and OIM assign a PIN through `POST /usuarios/{id}/pin`, scoped to the units they
+reach, for someone who has none or lost theirs. There is no way to require the old secret there —
+that is the case the endpoint exists for.
+
+That would open a real window: for as long as two people know the PIN, the one who delivered it
+could sign in the other's name. What closes it is that **an assigned PIN signs nothing at all**.
+`pin_precisa_troca` is set on assignment, and `identificar_assinante` refuses every signature
+while it holds — for the owner and for the person who delivered it alike. The only thing the
+delivered PIN opens is its own replacement, and the replacement is chosen by the owner alone.
+
+The refusal is raised *after* the PIN verifies, which is what lets it name the actual problem
+without becoming an oracle: reaching that message requires already knowing the secret. And it
+releases the rate limiter before raising, because the limiter guards against guessing and the
+guess already succeeded — otherwise three refusals would exhaust the same 3/min budget the change
+endpoint shares, and following the instruction would be what prevents following it.
+
+Changing your own secret (`POST /auth/pin`, `POST /auth/senha`) always requires the current one,
+and the new PIN is checked against a small policy in `app/rules/segredos.py`: 4–8 digits, not the
+matrícula, not a repeated digit or a run. It rejects the slice an attacker tries first, which is
+where three attempts a minute would stop being enough. It is not entropy — see below.
+
+**Changing a password does not end any session**, and that follows from there being no
+revocation list. Cutting access now means deactivating the account, which is re-read from the
+database on every request. Anyone assuming otherwise would assume wrong, so it is written here.
+
 **A PIN is not a signature certificate.** It proves the person was present and consented at
 that moment, on that device; it is not cryptographic non-repudiation, and someone who watches
 another person type it can reuse it until it changes. What raises the cost of that is the audit
